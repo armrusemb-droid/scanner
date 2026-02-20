@@ -505,9 +505,10 @@
 
 <script>
 // ── CONFIG ──
-// URL скрипта читается из config.json на GitHub
-// Если не найден — можно ввести вручную
-const CONFIG_URL = 'config.json';
+// URL скрипта читается из config.json через raw.githubusercontent.com
+const GITHUB_USER = 'armrusemb-droid';
+const GITHUB_REPO = 'scanner';
+const CONFIG_URL  = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/config.json`;
 
 let API_URL = '';
 let pendingGuest = null;
