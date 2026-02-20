@@ -606,15 +606,29 @@ async function confirmGuest() {
   closeModal('modal-new');
   setStatus('load', '⏳ Регистрируем...');
 
+  // Перезагружаем config перед confirm-запросом
+  await loadConfig();
+
+  if (!API_URL) {
+    setStatus('err', '❌ Не настроен API URL');
+    pendingGuest = null;
+    return;
+  }
+
+  // Используем сохранённый ID из pendingGuest
+  const guestId = pendingGuest.id;
+  const guardName = getGuard();
+  pendingGuest = null;
+
   try {
-    const url = `${API_URL}?id=${encodeURIComponent(pendingGuest.id)}&guard=${encodeURIComponent(getGuard())}&confirm=1`;
+    const url = API_URL + '?id=' + encodeURIComponent(guestId) + '&guard=' + encodeURIComponent(guardName) + '&confirm=1';
     const r = await fetch(url);
     const d = await r.json();
 
     if (d.success) {
       stats.ok++;
-      setStatus('ok', '✅ Зарегистрирован: ' + (d.guest.name || ''));
-      addLog('ok', d.guest, nowTime());
+      setStatus('ok', '✅ Зарегистрирован: ' + (d.guest ? d.guest.name : ''));
+      addLog('ok', d.guest || { name: guestId }, nowTime());
       vibrate([80, 40, 80]);
     } else {
       stats.err++;
@@ -622,10 +636,10 @@ async function confirmGuest() {
     }
   } catch(e) {
     stats.err++;
-    setStatus('err', '❌ Ошибка соединения');
+    setStatus('err', '❌ Ошибка соединения при регистрации');
+    console.error('confirmGuest error:', e);
   }
 
-  pendingGuest = null;
   updateStats();
   setTimeout(() => setStatus('', '📷 Ожидание сканирования...'), 2500);
 }
