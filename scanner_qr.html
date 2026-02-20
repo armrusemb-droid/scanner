@@ -583,19 +583,19 @@ async function processID(id) {
       stats.dup++;
       showModalDup(d.guest);
       setStatus('warn', '⚠️ Гость уже был отмечен');
-      addLog('dup', d.guest.name, nowTime());
+      addLog('dup', d.guest, nowTime());
       vibrate([300]);
     } else {
       stats.err++;
       showErr(d.message || 'Гость не найден', `ID: ${id}`);
       setStatus('err', '❌ ' + (d.message || 'Не найден'));
-      addLog('err', id, nowTime());
+      addLog('err', { name: id, org: '', id: '' }, nowTime());
       vibrate([500]);
     }
   } catch(e) {
     stats.err++;
     setStatus('err', '❌ Нет соединения');
-    addLog('err', id + ' (нет связи)', nowTime());
+    addLog('err', { name: id + ' (нет связи)', org: '', id: '' }, nowTime());
   }
   updateStats();
 }
@@ -614,7 +614,7 @@ async function confirmGuest() {
     if (d.success) {
       stats.ok++;
       setStatus('ok', '✅ Зарегистрирован: ' + (d.guest.name || ''));
-      addLog('ok', d.guest.name, nowTime());
+      addLog('ok', d.guest, nowTime());
       vibrate([80, 40, 80]);
     } else {
       stats.err++;
@@ -688,17 +688,37 @@ function setStatus(type, text) {
 }
 
 // ── LOG ──
-function addLog(type, name, time) {
-  const list = document.getElementById('log-list');
+const LOG_LABELS = { ok: 'Зарегистрирован', dup: 'Уже отмечен', err: 'Ошибка' };
+const LOG_COLORS = { ok: 'var(--green)', dup: 'var(--yellow)', err: 'var(--red)' };
+
+function addLog(type, guest, time) {
+  const list  = document.getElementById('log-list');
   const empty = list.querySelector('.log-empty');
   if (empty) empty.remove();
 
+  const name   = (typeof guest === 'object') ? (guest.name || '—')     : guest;
+  const org    = (typeof guest === 'object') ? (guest.org  || '')       : '';
+  const id     = (typeof guest === 'object') ? (guest.id   || '')       : '';
+  const label  = LOG_LABELS[type] || '';
+  const color  = LOG_COLORS[type] || 'var(--muted)';
+
   const item = document.createElement('div');
   item.className = 'log-item';
+  item.style.flexDirection = 'column';
+  item.style.alignItems    = 'flex-start';
+  item.style.gap           = '2px';
+  item.style.padding       = '9px 14px';
   item.innerHTML = `
-    <div class="log-dot ${type}"></div>
-    <div class="log-name">${name}</div>
-    <div class="log-time">${time}</div>
+    <div style="display:flex;align-items:center;gap:8px;width:100%">
+      <div class="log-dot ${type}"></div>
+      <div class="log-name" style="flex:1">${name}</div>
+      <div class="log-time">${time}</div>
+    </div>
+    ${org ? `<div style="font-size:11px;color:var(--accent2);padding-left:15px;font-weight:600">${org}</div>` : ''}
+    <div style="display:flex;align-items:center;gap:6px;padding-left:15px">
+      ${id ? `<span style="font-size:10px;font-family:var(--mono);color:var(--muted)">${id}</span>` : ''}
+      <span style="font-size:10px;font-weight:700;color:${color}">${label}</span>
+    </div>
   `;
   list.insertBefore(item, list.firstChild);
   while (list.children.length > 50) list.removeChild(list.lastChild);
