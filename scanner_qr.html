@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Регистрация гостей</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #0f1b2d;
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    background: #1a2e4a;
+    padding: 16px 20px;
+    border-bottom: 2px solid #1F4E79;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  header h1 {
+    font-size: 18px;
+    font-weight: 700;
+    color: #4db8ff;
+  }
+
+  header p {
+    font-size: 12px;
+    color: #8899aa;
+    margin-top: 2px;
+  }
+
+  .icon { font-size: 28px; }
+
+  /* Settings block */
+  #settings {
+    background: #1a2e4a;
+    margin: 16px;
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid #2a4a6a;
+  }
+
+  #settings h3 {
+    font-size: 13px;
+    color: #8899aa;
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  #settings input {
+    width: 100%;
+    padding: 10px 12px;
+    background: #0f1b2d;
+    border: 1px solid #2a4a6a;
+    border-radius: 8px;
+    color: #fff;
+    font-size: 13px;
+    outline: none;
+  }
+
+  #settings input:focus { border-color: #4db8ff; }
+
+  #settings small {
+    display: block;
+    color: #556677;
+    font-size: 11px;
+    margin-top: 6px;
+  }
+
+  /* Scanner */
+  #scanner-wrap {
+    margin: 0 16px;
+    border-radius: 16px;
+    overflow: hidden;
+    position: relative;
+    background: #000;
+    aspect-ratio: 1;
+  }
+
+  #reader { width: 100%; }
+
+  .scan-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .scan-corner {
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    border-color: #4db8ff;
+    border-style: solid;
+    border-width: 0;
+  }
+  .scan-corner.tl { top: 20px; left: 20px; border-top-width: 3px; border-left-width: 3px; }
+  .scan-corner.tr { top: 20px; right: 20px; border-top-width: 3px; border-right-width: 3px; }
+  .scan-corner.bl { bottom: 20px; left: 20px; border-bottom-width: 3px; border-left-width: 3px; }
+  .scan-corner.br { bottom: 20px; right: 20px; border-bottom-width: 3px; border-right-width: 3px; }
+
+  /* Status badge */
+  #status {
+    margin: 14px 16px 0;
+    padding: 12px 16px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    text-align: center;
+    background: #1a2e4a;
+    color: #8899aa;
+    transition: all 0.3s;
+  }
+
+  #status.scanning { background: #1a3a5c; color: #4db8ff; }
+  #status.loading  { background: #2a3a1a; color: #aad45a; }
+  #status.success  { background: #1a3a2a; color: #4ddd88; }
+  #status.error    { background: #3a1a1a; color: #ff6b6b; }
+  #status.warning  { background: #3a2a0a; color: #ffb84d; }
+
+  /* Result card */
+  #result-card {
+    margin: 14px 16px 0;
+    background: #1a2e4a;
+    border-radius: 12px;
+    padding: 16px;
+    border: 1px solid #2a4a6a;
+    display: none;
+    animation: fadeIn 0.3s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  #result-card.success { border-color: #4ddd88; }
+  #result-card.error   { border-color: #ff6b6b; }
+  #result-card.warning { border-color: #ffb84d; }
+
+  .result-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: #8899aa;
+    margin-bottom: 4px;
+  }
+
+  .result-name {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 4px;
+  }
+
+  .result-org {
+    font-size: 14px;
+    color: #4db8ff;
+    margin-bottom: 12px;
+  }
+
+  .result-meta {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .badge.green  { background: #1a3a2a; color: #4ddd88; }
+  .badge.yellow { background: #3a2a0a; color: #ffb84d; }
+  .badge.blue   { background: #1a2e4a; color: #4db8ff; border: 1px solid #2a4a6a; }
+  .badge.red    { background: #3a1a1a; color: #ff6b6b; }
+
+  /* Stats */
+  #stats {
+    margin: 14px 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+
+  .stat-box {
+    background: #1a2e4a;
+    border-radius: 10px;
+    padding: 12px;
+    text-align: center;
+    border: 1px solid #2a4a6a;
+  }
+
+  .stat-num {
+    font-size: 26px;
+    font-weight: 700;
+    color: #4db8ff;
+  }
+
+  .stat-lbl {
+    font-size: 11px;
+    color: #556677;
+    margin-top: 2px;
+  }
+
+  /* Log */
+  #log {
+    margin: 0 16px 20px;
+    background: #1a2e4a;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #2a4a6a;
+  }
+
+  #log h3 {
+    padding: 12px 16px;
+    font-size: 13px;
+    color: #8899aa;
+    border-bottom: 1px solid #2a4a6a;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  #log-list { max-height: 200px; overflow-y: auto; }
+
+  .log-item {
+    padding: 10px 16px;
+    border-bottom: 1px solid #162030;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    animation: fadeIn 0.3s ease;
+  }
+
+  .log-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .log-dot.ok  { background: #4ddd88; }
+  .log-dot.dup { background: #ffb84d; }
+  .log-dot.err { background: #ff6b6b; }
+
+  .log-name { flex: 1; color: #cce8ff; }
+  .log-time { color: #556677; font-size: 11px; white-space: nowrap; }
+
+  #log-empty {
+    padding: 20px 16px;
+    color: #556677;
+    font-size: 13px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="icon">🎫</div>
+  <div>
+    <h1>Регистрация гостей</h1>
+    <p>Конференция «Бизнес 2025»</p>
+  </div>
+</header>
+
+<!-- Настройки -->
+<div id="settings">
+  <h3>⚙️ Настройка — Google Apps Script URL</h3>
+  <input type="url" id="api-url"
+    placeholder="https://script.google.com/macros/s/ВАША_ССЫЛКА/exec"
+    value="">
+  <small>Вставьте URL вашего развёртывания Google Apps Script. Сохраняется автоматически.</small>
+</div>
+
+<!-- Сканер -->
+<div id="scanner-wrap">
+  <div id="reader"></div>
+  <div class="scan-overlay">
+    <div class="scan-corner tl"></div>
+    <div class="scan-corner tr"></div>
+    <div class="scan-corner bl"></div>
+    <div class="scan-corner br"></div>
+  </div>
+</div>
+
+<div id="status" class="scanning">📷 Наведите камеру на QR-код гостя</div>
+
+<!-- Карточка результата -->
+<div id="result-card">
+  <div class="result-label" id="card-label">Гость</div>
+  <div class="result-name" id="card-name">—</div>
+  <div class="result-org" id="card-org">—</div>
+  <div class="result-meta" id="card-meta"></div>
+</div>
+
+<!-- Статистика -->
+<div id="stats">
+  <div class="stat-box">
+    <div class="stat-num" id="cnt-ok">0</div>
+    <div class="stat-lbl">Отмечено</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-num" id="cnt-dup" style="color:#ffb84d">0</div>
+    <div class="stat-lbl">Повторно</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-num" id="cnt-err" style="color:#ff6b6b">0</div>
+    <div class="stat-lbl">Ошибок</div>
+  </div>
+</div>
+
+<!-- Лог -->
+<div id="log">
+  <h3>📋 Последние отметки</h3>
+  <div id="log-list">
+    <div id="log-empty">Сканирований пока нет</div>
+  </div>
+</div>
+
+<script>
+  // ---- State ----
+  let scanning = true;
+  let lastScanned = '';
+  let lastScannedTime = 0;
+  let stats = { ok: 0, dup: 0, err: 0 };
+
+  // ---- Persist API URL ----
+  const apiInput = document.getElementById('api-url');
+  const savedUrl = localStorage.getItem('guestApiUrl') || '';
+  apiInput.value = savedUrl;
+  apiInput.addEventListener('input', () => {
+    localStorage.setItem('guestApiUrl', apiInput.value.trim());
+  });
+
+  // ---- QR Scanner ----
+  const html5QrCode = new Html5Qrcode("reader");
+
+  Html5Qrcode.getCameras().then(cameras => {
+    if (!cameras.length) {
+      setStatus('error', '❌ Камера не найдена');
+      return;
+    }
+    // Prefer back camera
+    const cam = cameras.find(c => c.label.toLowerCase().includes('back')) || cameras[cameras.length - 1];
+
+    html5QrCode.start(
+      cam.id,
+      { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1 },
+      onScanSuccess,
+      () => {}
+    );
+  }).catch(() => setStatus('error', '❌ Ошибка доступа к камере'));
+
+  function onScanSuccess(decodedText) {
+    const now = Date.now();
+    // Debounce — не обрабатываем один QR дважды за 3 секунды
+    if (decodedText === lastScanned && now - lastScannedTime < 3000) return;
+    lastScanned = decodedText;
+    lastScannedTime = now;
+
+    processGuest(decodedText);
+  }
+
+  // ---- API call ----
+  async function processGuest(id) {
+    const url = apiInput.value.trim();
+    if (!url) {
+      setStatus('error', '⚠️ Укажите URL Google Apps Script в настройках');
+      return;
+    }
+
+    setStatus('loading', '⏳ Проверяем...');
+
+    try {
+      const res = await fetch(`${url}?id=${encodeURIComponent(id)}`);
+      const data = await res.json();
+
+      if (data.success) {
+        stats.ok++;
+        showCard('success', data);
+        setStatus('success', '✅ Гость зарегистрирован!');
+        addLog('ok', data.guest.name + ' ' + data.guest.surname, data.time);
+        vibrate([100, 50, 100]);
+      } else if (data.alreadyChecked) {
+        stats.dup++;
+        showCard('warning', data);
+        setStatus('warning', '⚠️ Уже был отмечен ранее');
+        addLog('dup', data.guest.name + ' ' + data.guest.surname, nowTime());
+        vibrate([300]);
+      } else {
+        stats.err++;
+        showCard('error', data);
+        setStatus('error', '❌ ' + (data.message || 'Гость не найден'));
+        addLog('err', id, nowTime());
+        vibrate([500]);
+      }
+    } catch (e) {
+      stats.err++;
+      setStatus('error', '❌ Ошибка соединения. Проверьте интернет.');
+      addLog('err', id + ' (нет связи)', nowTime());
+    }
+
+    updateStats();
+
+    // Через 3 сек возвращаем статус к сканированию
+    setTimeout(() => {
+      setStatus('scanning', '📷 Наведите камеру на QR-код гостя');
+    }, 3000);
+  }
+
+  // ---- UI helpers ----
+  function setStatus(cls, text) {
+    const el = document.getElementById('status');
+    el.className = cls;
+    el.textContent = text;
+  }
+
+  function showCard(type, data) {
+    const card = document.getElementById('result-card');
+    card.style.display = 'block';
+    card.className = type;
+
+    const g = data.guest || {};
+    const labels = { success: '✅ Зарегистрирован', warning: '⚠️ Уже отмечен', error: '❌ Ошибка' };
+    document.getElementById('card-label').textContent = labels[type] || '';
+    document.getElementById('card-name').textContent =
+      (g.name || '') + (g.surname ? ' ' + g.surname : '') || data.message || '—';
+    document.getElementById('card-org').textContent =
+      [g.org, g.position].filter(Boolean).join(' · ') || '';
+
+    const meta = document.getElementById('card-meta');
+    meta.innerHTML = '';
+    if (g.id) meta.innerHTML += `<span class="badge blue">${g.id}</span>`;
+    if (type === 'success') meta.innerHTML += `<span class="badge green">✓ Время: ${data.time || nowTime()}</span>`;
+    if (type === 'warning') meta.innerHTML += `<span class="badge yellow">Повторное сканирование</span>`;
+    if (type === 'error')   meta.innerHTML += `<span class="badge red">Не найден в списке</span>`;
+  }
+
+  function addLog(type, name, time) {
+    const list = document.getElementById('log-list');
+    const empty = document.getElementById('log-empty');
+    if (empty) empty.remove();
+
+    const item = document.createElement('div');
+    item.className = 'log-item';
+    item.innerHTML = `
+      <div class="log-dot ${type}"></div>
+      <div class="log-name">${name}</div>
+      <div class="log-time">${time}</div>
+    `;
+    list.insertBefore(item, list.firstChild);
+
+    // Ограничиваем лог 50 записями
+    while (list.children.length > 50) list.removeChild(list.lastChild);
+  }
+
+  function updateStats() {
+    document.getElementById('cnt-ok').textContent = stats.ok;
+    document.getElementById('cnt-dup').textContent = stats.dup;
+    document.getElementById('cnt-err').textContent = stats.err;
+  }
+
+  function nowTime() {
+    return new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+
+  function vibrate(pattern) {
+    if (navigator.vibrate) navigator.vibrate(pattern);
+  }
+</script>
+</body>
+</html>
