@@ -603,22 +603,20 @@ async function processID(id) {
 // ── CONFIRM ──
 async function confirmGuest() {
   if (!pendingGuest) return;
-  closeModal('modal-new');
-  setStatus('load', '⏳ Регистрируем...');
 
-  // Перезагружаем config перед confirm-запросом
-  await loadConfig();
-
-  if (!API_URL) {
-    setStatus('err', '❌ Не настроен API URL');
-    pendingGuest = null;
-    return;
-  }
-
-  // Используем сохранённый ID из pendingGuest
+  // Читаем данные ДО закрытия модала, пока pendingGuest не сброшен
   const guestId = pendingGuest.id;
   const guardName = getGuard();
   pendingGuest = null;
+
+  closeModal('modal-new');
+  setStatus('load', '⏳ Регистрируем...');
+
+  // API_URL уже загружен при первом запросе — повторная загрузка не нужна
+  if (!API_URL) {
+    setStatus('err', '❌ Не настроен API URL');
+    return;
+  }
 
   try {
     const url = API_URL + '?id=' + encodeURIComponent(guestId) + '&guard=' + encodeURIComponent(guardName) + '&confirm=1';
@@ -675,7 +673,7 @@ function openModal(id) {
 }
 function closeModal(id) {
   document.getElementById(id).classList.remove('active');
-  if (id === 'modal-new') { pendingGuest = null; setStatus('', '📷 Ожидание сканирования...'); }
+  if (id === 'modal-new' && pendingGuest) { pendingGuest = null; setStatus('', '📷 Ожидание сканирования...'); }
 }
 
 // ── MANUAL INPUT ──
