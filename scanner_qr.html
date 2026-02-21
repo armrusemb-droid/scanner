@@ -112,10 +112,9 @@
   .corner-o.tr { top: 14px; right: 14px; border-top-width: 1.5px; border-right-width: 1.5px; border-radius: 0 3px 0 0; }
   .corner-o.bl { bottom: 14px; left: 14px; border-bottom-width: 1.5px; border-left-width: 1.5px; border-radius: 0 0 0 3px; }
   .corner-o.br { bottom: 14px; right: 14px; border-bottom-width: 1.5px; border-right-width: 1.5px; border-radius: 0 0 3px 0; }
-  /* Зелёные при успешном сканировании */
   .corners-outer.success .corner-o { border-color: var(--green); }
 
-  /* ── Центральный блок: внутренняя рамка + линия ── */
+  /* ── Центральная зона сканирования ── */
   .scan-frame {
     position: absolute;
     top: 50%; left: 50%;
@@ -123,23 +122,17 @@
     width: 65%; aspect-ratio: 1;
     pointer-events: none;
   }
-
-  /* Затемнение вокруг зоны сканирования */
   .scan-frame::before {
     content: '';
     position: absolute; inset: 0;
     box-shadow: 0 0 0 2000px rgba(0,0,0,0.38);
     border-radius: 6px;
   }
-
-  /* Тонкая рамка зоны */
   .scan-box {
     position: absolute; inset: 0;
     border: 1px solid rgba(96,165,250,0.4);
     border-radius: 6px;
   }
-
-  /* Сканирующая линия — строго внутри scan-frame */
   .scan-line {
     position: absolute;
     left: 5%; width: 90%;
@@ -278,6 +271,11 @@
 
   .modal-body { padding: 14px 18px; }
 
+  .guest-appeal {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--muted);
+    margin-bottom: 3px;
+  }
   .guest-name {
     font-size: 20px; font-weight: 800; letter-spacing: -0.4px;
     line-height: 1.2; margin-bottom: 4px;
@@ -375,14 +373,12 @@
 <!-- SCANNER -->
 <div class="scanner-outer">
   <div id="reader"></div>
-  <!-- Тонкие синие метки по углам всего окна -->
   <div class="corners-outer" id="scan-corners">
     <div class="corner-o tl"></div>
     <div class="corner-o tr"></div>
     <div class="corner-o bl"></div>
     <div class="corner-o br"></div>
   </div>
-  <!-- Внутренняя рамка с линией (без угловых меток) -->
   <div class="scan-frame">
     <div class="scan-box"></div>
     <div class="scan-line"></div>
@@ -434,6 +430,7 @@
       </div>
     </div>
     <div class="modal-body">
+      <div class="guest-appeal" id="mn-appeal">—</div>
       <div class="guest-name" id="mn-name">—</div>
       <div class="guest-org"  id="mn-org">—</div>
       <div class="guest-pos"  id="mn-pos">—</div>
@@ -459,6 +456,7 @@
       </div>
     </div>
     <div class="modal-body">
+      <div class="guest-appeal" id="md-appeal">—</div>
       <div class="guest-name" id="md-name">—</div>
       <div class="guest-org"  id="md-org">—</div>
       <div class="guest-pos"  id="md-pos">—</div>
@@ -578,8 +576,7 @@ function onScan(text) {
   lastScanned = text; lastTime = now;
   vibrate([60]);
   const corners = document.getElementById('scan-corners');
-  corners.classList.add('success');
-  setTimeout(() => corners.classList.remove('success'), 800);
+  if (corners) { corners.classList.add('success'); setTimeout(() => corners.classList.remove('success'), 800); }
   processID(text.trim());
 }
 
@@ -659,10 +656,11 @@ async function confirmGuest() {
 
 // ── MODALS ──
 function showModalNew(g) {
-  document.getElementById('mn-name').textContent = g.name || '—';
-  document.getElementById('mn-org').textContent  = g.org  || '—';
-  document.getElementById('mn-pos').textContent  = g.position || '—';
-  document.getElementById('mn-id').textContent   = g.id   || '—';
+  document.getElementById('mn-appeal').textContent = g.appeal || '';
+  document.getElementById('mn-name').textContent   = g.name || '—';
+  document.getElementById('mn-org').textContent    = g.org  || '—';
+  document.getElementById('mn-pos').textContent    = g.position || '—';
+  document.getElementById('mn-id').textContent     = g.id   || '—';
   openModal('modal-new');
 }
 
@@ -693,15 +691,16 @@ function formatCheckedTime(raw) {
 }
 
 function showModalDup(g) {
-  document.getElementById('md-name').textContent  = g.name || '—';
-  document.getElementById('md-org').textContent   = g.org  || '—';
-  document.getElementById('md-pos').textContent   = g.position || '—';
-  document.getElementById('md-id').textContent    = g.id   || '—';
+  document.getElementById('md-appeal').textContent = g.appeal || '';
+  document.getElementById('md-name').textContent   = g.name || '—';
+  document.getElementById('md-org').textContent    = g.org  || '—';
+  document.getElementById('md-pos').textContent    = g.position || '—';
+  document.getElementById('md-id').textContent     = g.id   || '—';
   const dateStr = formatCheckedDate(g.checkedDate);
   const timeStr = formatCheckedTime(g.checkedTime);
-  document.getElementById('md-date').textContent  = dateStr;
-  document.getElementById('md-time').textContent  = timeStr ? `в ${timeStr}` : '—';
-  document.getElementById('md-guard').textContent = '👮 ' + (g.guard || 'Не указан');
+  document.getElementById('md-date').textContent   = dateStr;
+  document.getElementById('md-time').textContent   = timeStr ? `в ${timeStr}` : '—';
+  document.getElementById('md-guard').textContent  = '👮 ' + (g.guard || 'Не указан');
   openModal('modal-dup');
 }
 
