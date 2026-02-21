@@ -105,19 +105,22 @@
   }
   .corner-o {
     position: absolute; width: 22px; height: 22px;
-    border-color: rgba(96,165,250,0.55); border-style: solid; border-width: 0;
+    border-color: rgba(96,165,250,0.7); border-style: solid; border-width: 0;
+    transition: border-color 0.3s;
   }
   .corner-o.tl { top: 14px; left: 14px; border-top-width: 1.5px; border-left-width: 1.5px; border-radius: 3px 0 0 0; }
   .corner-o.tr { top: 14px; right: 14px; border-top-width: 1.5px; border-right-width: 1.5px; border-radius: 0 3px 0 0; }
   .corner-o.bl { bottom: 14px; left: 14px; border-bottom-width: 1.5px; border-left-width: 1.5px; border-radius: 0 0 0 3px; }
   .corner-o.br { bottom: 14px; right: 14px; border-bottom-width: 1.5px; border-right-width: 1.5px; border-radius: 0 0 3px 0; }
+  /* Зелёные при успешном сканировании */
+  .corners-outer.success .corner-o { border-color: var(--green); }
 
-  /* ── Центральный блок: внутренняя рамка + толстые метки + линия ── */
+  /* ── Центральный блок: внутренняя рамка + линия ── */
   .scan-frame {
     position: absolute;
     top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    width: 62%; aspect-ratio: 1;
+    width: 65%; aspect-ratio: 1;
     pointer-events: none;
   }
 
@@ -126,32 +129,15 @@
     content: '';
     position: absolute; inset: 0;
     box-shadow: 0 0 0 2000px rgba(0,0,0,0.38);
-    border-radius: 8px;
+    border-radius: 6px;
   }
 
   /* Тонкая рамка зоны */
   .scan-box {
     position: absolute; inset: 0;
-    border: 1px solid rgba(96,165,250,0.3);
-    border-radius: 8px;
+    border: 1px solid rgba(96,165,250,0.4);
+    border-radius: 6px;
   }
-
-  /* Толстые серо-белые угловые метки внутренней рамки */
-  .corners-inner {
-    position: absolute; inset: -1px;
-    transition: filter 0.3s;
-  }
-  .corner-i {
-    position: absolute; width: 20px; height: 20px;
-    border-color: rgba(200,210,230,0.85); border-style: solid; border-width: 0;
-    transition: border-color 0.3s;
-  }
-  .corner-i.tl { top: 0; left: 0; border-top-width: 3px; border-left-width: 3px; border-radius: 4px 0 0 0; }
-  .corner-i.tr { top: 0; right: 0; border-top-width: 3px; border-right-width: 3px; border-radius: 0 4px 0 0; }
-  .corner-i.bl { bottom: 0; left: 0; border-bottom-width: 3px; border-left-width: 3px; border-radius: 0 0 0 4px; }
-  .corner-i.br { bottom: 0; right: 0; border-bottom-width: 3px; border-right-width: 3px; border-radius: 0 0 4px 0; }
-  /* Зелёные при успешном сканировании */
-  .corners-inner.success .corner-i { border-color: var(--green); }
 
   /* Сканирующая линия — строго внутри scan-frame */
   .scan-line {
@@ -390,21 +376,15 @@
 <div class="scanner-outer">
   <div id="reader"></div>
   <!-- Тонкие синие метки по углам всего окна -->
-  <div class="corners-outer">
+  <div class="corners-outer" id="scan-corners">
     <div class="corner-o tl"></div>
     <div class="corner-o tr"></div>
     <div class="corner-o bl"></div>
     <div class="corner-o br"></div>
   </div>
-  <!-- Внутренняя рамка с толстыми метками и линией -->
+  <!-- Внутренняя рамка с линией (без угловых меток) -->
   <div class="scan-frame">
     <div class="scan-box"></div>
-    <div class="corners-inner" id="scan-corners">
-      <div class="corner-i tl"></div>
-      <div class="corner-i tr"></div>
-      <div class="corner-i bl"></div>
-      <div class="corner-i br"></div>
-    </div>
     <div class="scan-line"></div>
   </div>
   <div class="scan-hint">Наведите камеру на QR-код гостя</div>
@@ -596,9 +576,7 @@ function onScan(text) {
   const now = Date.now();
   if (text === lastScanned && now - lastTime < 3500) return;
   lastScanned = text; lastTime = now;
-  // Вибрация при считывании
   vibrate([60]);
-  // Угловые метки мигают зелёным
   const corners = document.getElementById('scan-corners');
   corners.classList.add('success');
   setTimeout(() => corners.classList.remove('success'), 800);
@@ -648,20 +626,12 @@ async function processID(id) {
 // ── CONFIRM ──
 async function confirmGuest() {
   if (!pendingGuest) return;
-
-  // Читаем данные ДО закрытия модала
   const guestId = pendingGuest.id;
   const guardName = getGuard();
   pendingGuest = null;
-
   closeModal('modal-new');
   setStatus('load', '⏳ Регистрируем...');
-
-  // API_URL уже загружен при первом запросе — повторная загрузка не нужна
-  if (!API_URL) {
-    setStatus('err', '❌ Не настроен API URL');
-    return;
-  }
+  if (!API_URL) { setStatus('err', '❌ Не настроен API URL'); return; }
 
   try {
     const url = API_URL + '?id=' + encodeURIComponent(guestId) + '&guard=' + encodeURIComponent(guardName) + '&confirm=1';
@@ -696,34 +666,24 @@ function showModalNew(g) {
   openModal('modal-new');
 }
 
-// Форматирование даты и времени из Google Sheets
-// Sheets возвращает дату как "dd.MM.yyyy" или ISO-строку,
-// а время — как ISO-строку с базой 1899-12-30T... или как "HH:mm:ss"
 function formatCheckedDate(raw) {
   if (!raw) return '—';
   const s = raw.toString().trim();
-  if (!s) return '—';
-  // Уже в формате dd.MM.yyyy
   if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return s;
-  // ISO — берём только дату
   if (s.includes('T')) {
     const d = new Date(s);
     if (!isNaN(d)) return d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric' });
   }
-  return s;
+  return s || '—';
 }
 
 function formatCheckedTime(raw) {
   if (!raw) return '';
   const s = raw.toString().trim();
-  if (!s) return '';
-  // Уже в формате HH:mm:ss или HH:mm
   if (/^\d{2}:\d{2}(:\d{2})?$/.test(s)) return s.slice(0, 5);
-  // ISO-строка (Sheets кодирует время как 1899-12-30T...)
   if (s.includes('T')) {
     const d = new Date(s);
     if (!isNaN(d)) {
-      // Берём только часы и минуты из UTC, т.к. Sheets хранит без timezone
       const hh = String(d.getUTCHours()).padStart(2, '0');
       const mm = String(d.getUTCMinutes()).padStart(2, '0');
       return `${hh}:${mm}`;
