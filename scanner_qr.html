@@ -53,6 +53,21 @@
   }
   header h1 { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; }
 
+  .guard-chip {
+    margin-left: auto; flex-shrink: 0;
+    display: flex; align-items: center; gap: 6px;
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 20px; padding: 5px 10px 5px 8px;
+    cursor: pointer; transition: border-color 0.2s;
+    max-width: 160px;
+  }
+  .guard-chip:active { border-color: var(--accent); }
+  .guard-chip-icon { font-size: 14px; flex-shrink: 0; }
+  .guard-chip-text {
+    font-size: 12px; font-weight: 700; color: var(--accent2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
   /* ── SECTIONS ── */
   .section {
     margin: 12px 14px 0;
@@ -431,17 +446,11 @@
   <div>
     <h1>Регистрация гостей</h1>
   </div>
-</header>
-
-<!-- КОМЕНДАНТ -->
-<div class="section">
-  <div class="section-title">Дежурный комендант</div>
-  <div class="section-body">
-    <div class="field-row">
-      <input type="text" id="guard-name" placeholder="Введите ФИО коменданта...">
-    </div>
+  <div class="guard-chip" onclick="openGuardModal(false)" id="guard-chip">
+    <span class="guard-chip-icon">👮</span>
+    <span class="guard-chip-text" id="guard-chip-name">—</span>
   </div>
-</div>
+</header>
 
 <!-- SCANNER -->
 <div class="scanner-outer">
@@ -591,6 +600,28 @@
   </div>
 </div>
 
+<!-- ══ MODAL: КОМЕНДАНТ ══ -->
+<div class="modal-overlay" id="modal-guard">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon input">👮</div>
+      <div>
+        <div class="modal-title" id="mg-title">Добро пожаловать!</div>
+        <div class="modal-sub">Представьтесь, пожалуйста</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px" id="mg-hint">
+        Для начала работы введите ваше ФИО. Оно будет отображаться в журнале при каждой регистрации.
+      </div>
+      <input type="text" id="guard-name-input" placeholder="Петров П.П." style="font-size:15px;font-weight:600;">
+    </div>
+    <div class="modal-footer" id="mg-footer">
+      <button class="btn btn-confirm" onclick="saveGuard()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ MODAL: НЕ НАЙДЕН ══ -->
 <div class="modal-overlay" id="modal-err">
   <div class="modal">
@@ -730,19 +761,58 @@ async function loadConfig() {
 }
 
 // ── GUARD NAME ──
-const guardInput = document.getElementById('guard-name');
-guardInput.value = localStorage.getItem('guardName') || '';
-guardInput.addEventListener('input', () => {
-  localStorage.setItem('guardName', guardInput.value.trim());
-});
-function getGuard() {
-  return guardInput.value.trim() || 'Не указан';
+let guardName = localStorage.getItem('guardName') || '';
+
+function getGuard() { return guardName || 'Не указан'; }
+
+function updateGuardChip() {
+  document.getElementById('guard-chip-name').textContent = guardName || 'Не указан';
 }
+
+function openGuardModal(required) {
+  // required=true — первый запуск, нельзя закрыть без ввода
+  document.getElementById('mg-title').textContent = required ? 'Добро пожаловать!' : 'Смена коменданта';
+  document.getElementById('mg-hint').textContent  = required
+    ? 'Для начала работы введите ваше ФИО. Оно будет отображаться в журнале при каждой регистрации.'
+    : 'Измените ФИО дежурного коменданта.';
+  // Показываем/скрываем кнопку отмены
+  const footer = document.getElementById('mg-footer');
+  footer.innerHTML = required
+    ? '<button class="btn btn-confirm" onclick="saveGuard()">Начать работу</button>'
+    : '<button class="btn btn-cancel" onclick="closeModal(\'modal-guard\')">Отмена</button><button class="btn btn-confirm" onclick="saveGuard()">Сохранить</button>';
+  document.getElementById('guard-name-input').value = guardName;
+  // required-модал нельзя закрыть кликом по оверлею
+  const overlay = document.getElementById('modal-guard');
+  overlay.onclick = required ? null : (e => { if (e.target === overlay) closeModal('modal-guard'); });
+  openModal('modal-guard');
+  setTimeout(() => document.getElementById('guard-name-input').focus(), 150);
+}
+
+function saveGuard() {
+  const val = document.getElementById('guard-name-input').value.trim();
+  if (!val) {
+    document.getElementById('guard-name-input').style.borderColor = 'var(--red)';
+    setTimeout(() => document.getElementById('guard-name-input').style.borderColor = '', 1000);
+    return;
+  }
+  guardName = val;
+  localStorage.setItem('guardName', guardName);
+  updateGuardChip();
+  closeModal('modal-guard');
+}
+
+// Enter в поле коменданта
+document.getElementById('guard-name-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveGuard();
+});
 
 // ── SCANNER ──
 const html5QrCode = new Html5Qrcode("reader");
 
 clientUA = parseUA();
+
+// Показываем имя коменданта в шапке сразу
+updateGuardChip();
 
 loadConfig().then(async () => {
   // Получаем внешний IP один раз при загрузке
@@ -751,6 +821,11 @@ loadConfig().then(async () => {
     const d = await r.json();
     clientIP = d.ip || '';
   } catch(e) { clientIP = 'unknown'; }
+
+  // Если имя не задано — показываем обязательный модал
+  if (!guardName) {
+    openGuardModal(true);
+  }
 
   Html5Qrcode.getCameras().then(cams => {
     if (!cams.length) { setStatus('err', '❌ Камера не найдена'); return; }
