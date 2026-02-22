@@ -236,10 +236,9 @@
     to   { opacity: 1; transform: translateY(0); }
   }
   .log-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-  .log-dot.ok      { background: var(--green); }
-  .log-dot.dup     { background: var(--yellow); }
-  .log-dot.err     { background: var(--red); }
-  .log-dot.uncheck { background: var(--red); opacity: 0.6; }
+  .log-dot.ok  { background: var(--green); }
+  .log-dot.dup { background: var(--yellow); }
+  .log-dot.err { background: var(--red); }
   .log-name { flex: 1; font-size: 12px; color: #93c5fd; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .log-time { font-size: 10px; color: var(--muted); font-family: var(--mono); white-space: nowrap; }
   .log-empty { padding: 16px; text-align: center; font-size: 12px; color: var(--muted); }
@@ -327,7 +326,40 @@
   .btn-cancel  { background: var(--bg3); color: var(--muted); border: 1px solid var(--border); }
   .btn-ok      { background: var(--accent); color: #fff; flex: 1; }
   .btn-close   { background: var(--bg3); color: var(--muted); border: 1px solid var(--border); }
-  .btn-uncheck { background: var(--bg3); color: var(--red); border: 1px solid rgba(239,68,68,0.3); font-size: 12px; }
+
+  /* Search tabs */
+  .search-tabs {
+    display: flex; gap: 4px;
+    background: var(--bg3); border-radius: 8px; padding: 3px;
+  }
+  .search-tab {
+    flex: 1; padding: 7px;
+    background: transparent; border: none; border-radius: 6px;
+    font-family: var(--sans); font-size: 12px; font-weight: 700;
+    color: var(--muted); cursor: pointer; transition: all 0.15s;
+  }
+  .search-tab.active {
+    background: var(--bg2); color: var(--accent2);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+
+  /* Search result cards */
+  .search-card {
+    padding: 9px 12px; border-radius: 8px;
+    background: var(--bg3); border: 1px solid var(--border);
+    margin-bottom: 6px; cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    transition: border-color 0.15s;
+  }
+  .search-card:active { border-color: var(--accent); }
+  .search-card-info { flex: 1; min-width: 0; }
+  .search-card-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .search-card-sub  { font-size: 11px; color: var(--accent2); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .search-card-id   { font-size: 10px; font-family: var(--mono); color: var(--muted); margin-top: 2px; }
+  .search-card-status { flex-shrink: 0; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px; }
+  .search-card-status.checked { background: rgba(245,158,11,0.15); color: var(--yellow); }
+  .search-card-status.free    { background: rgba(34,197,94,0.12);  color: var(--green); }
+  .search-hint { font-size: 11px; color: var(--muted); text-align: center; padding: 16px 0; }
 
   /* Manual input modal */
   .prefix-input {
@@ -417,7 +449,7 @@
 
 <!-- MANUAL BUTTON -->
 <button class="btn-manual" onclick="openManual()">
-  ⌨️ Ввести ID гостя вручную
+  🔍 Найти гостя вручную
 </button>
 
 <!-- STATS -->
@@ -496,30 +528,7 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-uncheck" onclick="confirmUncheck()">↩ Отменить регистрацию</button>
       <button class="btn btn-ok" onclick="closeModal('modal-dup')">Понятно</button>
-    </div>
-  </div>
-</div>
-
-<!-- ══ MODAL: ПОДТВЕРЖДЕНИЕ ОТМЕНЫ ══ -->
-<div class="modal-overlay" id="modal-uncheck">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-icon err">↩</div>
-      <div>
-        <div class="modal-title">Отменить регистрацию?</div>
-        <div class="modal-sub" id="mu-sub">Отметка о прибытии будет удалена</div>
-      </div>
-    </div>
-    <div class="modal-body">
-      <div style="font-size:13px; color:var(--muted); line-height:1.5;">
-        Данные о времени и дате прибытия гостя <span id="mu-name" style="color:var(--text);font-weight:700"></span> будут стёрты из таблицы. Это действие записывается в журнал.
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-cancel" onclick="closeModal('modal-uncheck')">Назад</button>
-      <button class="btn" style="background:var(--red);color:#fff;" onclick="uncheckGuest()">Да, отменить</button>
     </div>
   </div>
 </div>
@@ -545,25 +554,43 @@
   </div>
 </div>
 
-<!-- ══ MODAL: РУЧНОЙ ВВОД ══ -->
+<!-- ══ MODAL: РУЧНОЙ ПОИСК ══ -->
 <div class="modal-overlay" id="modal-manual">
   <div class="modal">
     <div class="modal-header">
       <div class="modal-icon input">⌨️</div>
       <div>
-        <div class="modal-title">Ввод ID вручную</div>
-        <div class="modal-sub">Введите цифровой индекс гостя</div>
+        <div class="modal-title">Найти гостя</div>
+        <div class="modal-sub">По номеру или по ФИО</div>
       </div>
     </div>
-    <div class="modal-body">
-      <div class="prefix-input">
-        <div class="prefix-label">GUEST-</div>
-        <input type="text" id="manual-num" inputmode="numeric" pattern="[0-9]*" placeholder="0001" maxlength="6">
+    <div class="modal-body" style="padding-bottom:8px">
+
+      <!-- Вкладки -->
+      <div class="search-tabs">
+        <button class="search-tab active" id="tab-id"  onclick="switchTab('id')">По номеру</button>
+        <button class="search-tab"        id="tab-name" onclick="switchTab('name')">По ФИО</button>
       </div>
+
+      <!-- Панель: по ID -->
+      <div id="panel-id">
+        <div class="prefix-input" style="margin-top:10px">
+          <div class="prefix-label">GUEST-</div>
+          <input type="text" id="manual-num" inputmode="numeric" pattern="[0-9]*" placeholder="0001" maxlength="6">
+        </div>
+      </div>
+
+      <!-- Панель: по ФИО -->
+      <div id="panel-name" style="display:none">
+        <input type="text" id="search-name" placeholder="Введите часть ФИО..." style="margin-top:10px"
+               oninput="onSearchInput()">
+        <div id="search-results" style="margin-top:8px; max-height:220px; overflow-y:auto;"></div>
+      </div>
+
     </div>
-    <div class="modal-footer">
+    <div class="modal-footer" id="manual-footer">
       <button class="btn btn-cancel" onclick="closeModal('modal-manual')">Отмена</button>
-      <button class="btn btn-ok" onclick="submitManual()">Проверить</button>
+      <button class="btn btn-ok" id="btn-submit-id" onclick="submitManual()">Проверить</button>
     </div>
   </div>
 </div>
@@ -578,7 +605,6 @@ const CONFIG_URL  = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_R
 
 let API_URL = '';
 let pendingGuest = null;
-let pendingUncheckId = null;
 let lastScanned = '';
 let lastTime = 0;
 let stats = { ok: 0, dup: 0, err: 0 };
@@ -743,7 +769,6 @@ function formatCheckedTime(raw) {
 }
 
 function showModalDup(g) {
-  pendingUncheckId = g.id || null;   // сохраняем ID для возможной отмены
   document.getElementById('md-appeal').textContent = g.appeal || '';
   document.getElementById('md-name').textContent   = g.name || '—';
   document.getElementById('md-org').textContent    = g.org  || '—';
@@ -769,52 +794,31 @@ function openModal(id) {
 function closeModal(id) {
   document.getElementById(id).classList.remove('active');
   if (id === 'modal-new' && pendingGuest) { pendingGuest = null; setStatus('', '📷 Ожидание сканирования...'); }
-  if (id === 'modal-uncheck') { pendingUncheckId = null; }
 }
 
-// ── UNCHECK ──
-function confirmUncheck() {
-  // pendingUncheckId уже установлен в showModalDup
-  const name = document.getElementById('md-name').textContent;
-  document.getElementById('mu-name').textContent = name;
-  closeModal('modal-dup');
-  openModal('modal-uncheck');
-}
+// ── MANUAL / SEARCH ──
+let currentTab = 'id';
+let searchTimer = null;
 
-async function uncheckGuest() {
-  if (!pendingUncheckId) return;
-  const guestId = pendingUncheckId;
-  pendingUncheckId = null;
-  closeModal('modal-uncheck');
-  setStatus('load', '⏳ Отменяем регистрацию...');
-
-  try {
-    const url = API_URL + '?id=' + encodeURIComponent(guestId) + '&guard=' + encodeURIComponent(getGuard()) + '&uncheck=1';
-    const r = await fetch(url);
-    const d = await r.json();
-
-    if (d.success) {
-      stats.dup = Math.max(0, stats.dup - 1);
-      setStatus('warn', '↩ Регистрация отменена');
-      addLog('uncheck', d.guest || { name: guestId }, nowTime());
-      vibrate([100, 50, 100]);
-    } else {
-      setStatus('err', '❌ Ошибка: ' + d.message);
-    }
-  } catch(e) {
-    setStatus('err', '❌ Ошибка соединения');
-    console.error('uncheckGuest error:', e);
-  }
-
-  updateStats();
-  setTimeout(() => setStatus('', '📷 Ожидание сканирования...'), 2500);
-}
-
-// ── MANUAL INPUT ──
 function openManual() {
+  currentTab = 'id';
   document.getElementById('manual-num').value = '';
+  document.getElementById('search-name').value = '';
+  document.getElementById('search-results').innerHTML = '<div class="search-hint">Начните вводить ФИО</div>';
+  switchTab('id');
   openModal('modal-manual');
   setTimeout(() => document.getElementById('manual-num').focus(), 150);
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-id').classList.toggle('active', tab === 'id');
+  document.getElementById('tab-name').classList.toggle('active', tab === 'name');
+  document.getElementById('panel-id').style.display   = tab === 'id'   ? '' : 'none';
+  document.getElementById('panel-name').style.display = tab === 'name' ? '' : 'none';
+  document.getElementById('btn-submit-id').style.display = tab === 'id' ? '' : 'none';
+  if (tab === 'name') setTimeout(() => document.getElementById('search-name').focus(), 100);
+  if (tab === 'id')   setTimeout(() => document.getElementById('manual-num').focus(), 100);
 }
 
 function submitManual() {
@@ -822,6 +826,59 @@ function submitManual() {
   if (!num) return;
   const padded = num.padStart(4, '0');
   const id = 'GUEST-' + padded;
+  closeModal('modal-manual');
+  processID(id);
+}
+
+function onSearchInput() {
+  clearTimeout(searchTimer);
+  const q = document.getElementById('search-name').value.trim();
+  if (q.length < 2) {
+    document.getElementById('search-results').innerHTML = '<div class="search-hint">Введите минимум 2 символа</div>';
+    return;
+  }
+  document.getElementById('search-results').innerHTML = '<div class="search-hint">⏳ Поиск...</div>';
+  searchTimer = setTimeout(() => doSearch(q), 400);
+}
+
+async function doSearch(q) {
+  if (!API_URL) {
+    document.getElementById('search-results').innerHTML = '<div class="search-hint">❌ Не настроен API URL</div>';
+    return;
+  }
+  try {
+    const url = API_URL + '?search=' + encodeURIComponent(q);
+    const r = await fetch(url);
+    const d = await r.json();
+    renderSearchResults(d.results || []);
+  } catch(e) {
+    document.getElementById('search-results').innerHTML = '<div class="search-hint">❌ Ошибка соединения</div>';
+  }
+}
+
+function renderSearchResults(results) {
+  const box = document.getElementById('search-results');
+  if (!results.length) {
+    box.innerHTML = '<div class="search-hint">Ничего не найдено</div>';
+    return;
+  }
+  box.innerHTML = results.map(g => {
+    const checked = g.checkedDate && g.checkedDate.toString().trim() !== '';
+    const statusClass = checked ? 'checked' : 'free';
+    const statusText  = checked ? '✓ Отмечен' : '○ Не отмечен';
+    return `
+      <div class="search-card" onclick="selectSearchResult('${g.id}')">
+        <div class="search-card-info">
+          <div class="search-card-name">${g.appeal ? g.appeal + ' ' : ''}${g.name}</div>
+          <div class="search-card-sub">${g.org || ''}</div>
+          <div class="search-card-id">${g.id}${g.position ? ' · ' + g.position : ''}</div>
+        </div>
+        <div class="search-card-status ${statusClass}">${statusText}</div>
+      </div>`;
+  }).join('');
+}
+
+function selectSearchResult(id) {
   closeModal('modal-manual');
   processID(id);
 }
@@ -834,8 +891,8 @@ function setStatus(type, text) {
 }
 
 // ── LOG ──
-const LOG_LABELS = { ok: 'Зарегистрирован', dup: 'Уже отмечен', err: 'Ошибка', uncheck: 'Отмена регистрации' };
-const LOG_COLORS = { ok: 'var(--green)', dup: 'var(--yellow)', err: 'var(--red)', uncheck: 'var(--red)' };
+const LOG_LABELS = { ok: 'Зарегистрирован', dup: 'Уже отмечен', err: 'Ошибка' };
+const LOG_COLORS = { ok: 'var(--green)', dup: 'var(--yellow)', err: 'var(--red)' };
 
 function addLog(type, guest, time) {
   const list  = document.getElementById('log-list');
@@ -884,6 +941,13 @@ function vibrate(p) { if (navigator.vibrate) navigator.vibrate(p); }
 // Enter в ручном вводе
 document.getElementById('manual-num').addEventListener('keydown', e => {
   if (e.key === 'Enter') submitManual();
+});
+document.getElementById('search-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    clearTimeout(searchTimer);
+    const q = document.getElementById('search-name').value.trim();
+    if (q.length >= 2) doSearch(q);
+  }
 });
 </script>
 </body>
