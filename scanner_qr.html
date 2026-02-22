@@ -922,7 +922,8 @@ async function processID(id) {
     showErr('Не настроен API URL', 'Добавьте файл config.json с адресом скрипта.');
     return;
   }
-  vibrate([40, 30, 80]); // вибрация сразу при получении ID — до запроса на сервер
+  // setTimeout вырывает вызов из потока камеры — Chrome разрешает vibrate() только так
+  setTimeout(() => vibrate([40, 30, 80]), 0);
   setStatus('load', '⏳ Проверяем...');
 
   try {
