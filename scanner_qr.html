@@ -869,7 +869,7 @@ function renderSearchResults(results) {
     return `
       <div class="search-card" onclick="selectSearchResult('${g.id}')">
         <div class="search-card-info">
-          <div class="search-card-name">${g.appeal ? g.appeal + ' ' : ''}${g.name}</div>
+          <div class="search-card-name">${g.name}</div>
           <div class="search-card-sub">${g.org || ''}</div>
           <div class="search-card-id">${g.id}${g.position ? ' · ' + g.position : ''}</div>
         </div>
