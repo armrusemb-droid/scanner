@@ -236,9 +236,10 @@
     to   { opacity: 1; transform: translateY(0); }
   }
   .log-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-  .log-dot.ok  { background: var(--green); }
-  .log-dot.dup { background: var(--yellow); }
-  .log-dot.err { background: var(--red); }
+  .log-dot.ok      { background: var(--green); }
+  .log-dot.dup     { background: var(--yellow); }
+  .log-dot.err     { background: var(--red); }
+  .log-dot.uncheck { background: var(--red); opacity: 0.6; }
   .log-name { flex: 1; font-size: 12px; color: #93c5fd; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .log-time { font-size: 10px; color: var(--muted); font-family: var(--mono); white-space: nowrap; }
   .log-empty { padding: 16px; text-align: center; font-size: 12px; color: var(--muted); }
@@ -326,6 +327,28 @@
   .btn-cancel  { background: var(--bg3); color: var(--muted); border: 1px solid var(--border); }
   .btn-ok      { background: var(--accent); color: #fff; flex: 1; }
   .btn-close   { background: var(--bg3); color: var(--muted); border: 1px solid var(--border); }
+  .btn-uncheck { background: var(--bg3); color: var(--red); border: 1px solid rgba(239,68,68,0.3); font-size: 12px; }
+
+  /* Dossier grid for dup modal */
+  .dossier {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 1px; margin-top: 12px;
+    background: var(--border); border-radius: 8px; overflow: hidden;
+  }
+  .dossier-cell {
+    background: var(--bg3); padding: 7px 10px;
+  }
+  .dossier-cell.full { grid-column: 1 / -1; }
+  .dossier-label {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 2px;
+  }
+  .dossier-value {
+    font-size: 12px; font-weight: 700; color: var(--text);
+    font-family: var(--mono);
+  }
+  .dossier-value.accent { color: var(--accent2); }
+  .dossier-value.warn   { color: var(--yellow); }
 
   /* Search tabs */
   .search-tabs {
@@ -515,20 +538,55 @@
     </div>
     <div class="modal-body">
       <div class="guest-appeal" id="md-appeal"></div>
-      <div class="guest-name" id="md-name">—</div>
-      <div class="guest-org"  id="md-org">—</div>
-      <div class="guest-pos"  id="md-pos">—</div>
-      <div class="info-row">
-        <span class="info-badge id"   id="md-id">—</span>
-        <span class="info-badge warn" id="md-date">—</span>
-        <span class="info-badge warn" id="md-time">—</span>
+      <div class="guest-name"   id="md-name">—</div>
+      <div class="guest-org"    id="md-org">—</div>
+      <div class="guest-pos"    id="md-pos">—</div>
+      <div class="dossier">
+        <div class="dossier-cell">
+          <div class="dossier-label">ID гостя</div>
+          <div class="dossier-value accent" id="md-id">—</div>
+        </div>
+        <div class="dossier-cell">
+          <div class="dossier-label">Комендант</div>
+          <div class="dossier-value" id="md-guard">—</div>
+        </div>
+        <div class="dossier-cell">
+          <div class="dossier-label">Дата отметки</div>
+          <div class="dossier-value warn" id="md-date">—</div>
+        </div>
+        <div class="dossier-cell">
+          <div class="dossier-label">Время отметки</div>
+          <div class="dossier-value warn" id="md-time">—</div>
+        </div>
       </div>
-      <div class="info-row">
-        <span class="info-badge guard" id="md-guard">—</span>
+    </div>
+    <div class="modal-footer" style="flex-direction:column; gap:6px;">
+      <button class="btn btn-ok"      onclick="closeModal('modal-dup')">Понятно</button>
+      <button class="btn btn-uncheck" onclick="confirmUncheck()">↩ Отменить регистрацию</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: ПОДТВЕРЖДЕНИЕ ОТМЕНЫ ══ -->
+<div class="modal-overlay" id="modal-uncheck">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon err" style="font-size:14px">↩</div>
+      <div>
+        <div class="modal-title">Отменить регистрацию?</div>
+        <div class="modal-sub">Отметка о прибытии будет удалена</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:13px; color:var(--muted); line-height:1.6;">
+        Данные о времени и дате прибытия гостя
+        <span id="mu-name" style="color:var(--text); font-weight:700;"></span>
+        будут стёрты. Действие записывается в журнал.
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-ok" onclick="closeModal('modal-dup')">Понятно</button>
+      <button class="btn btn-cancel" onclick="closeModal('modal-uncheck')">Назад</button>
+      <button class="btn" style="background:var(--red);color:#fff;" onclick="uncheckGuest()">Да, отменить</button>
     </div>
   </div>
 </div>
@@ -605,6 +663,7 @@ const CONFIG_URL  = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_R
 
 let API_URL = '';
 let pendingGuest = null;
+let pendingUncheckId = null;
 let lastScanned = '';
 let lastTime = 0;
 let stats = { ok: 0, dup: 0, err: 0 };
@@ -769,6 +828,7 @@ function formatCheckedTime(raw) {
 }
 
 function showModalDup(g) {
+  pendingUncheckId = g.id || null;
   document.getElementById('md-appeal').textContent = g.appeal || '';
   document.getElementById('md-name').textContent   = g.name || '—';
   document.getElementById('md-org').textContent    = g.org  || '—';
@@ -777,8 +837,8 @@ function showModalDup(g) {
   const dateStr = formatCheckedDate(g.checkedDate);
   const timeStr = formatCheckedTime(g.checkedTime);
   document.getElementById('md-date').textContent   = dateStr;
-  document.getElementById('md-time').textContent   = timeStr ? `в ${timeStr}` : '—';
-  document.getElementById('md-guard').textContent  = '👮 ' + (g.guard || 'Не указан');
+  document.getElementById('md-time').textContent   = timeStr || '—';
+  document.getElementById('md-guard').textContent  = g.guard || 'Не указан';
   openModal('modal-dup');
 }
 
@@ -794,6 +854,40 @@ function openModal(id) {
 function closeModal(id) {
   document.getElementById(id).classList.remove('active');
   if (id === 'modal-new' && pendingGuest) { pendingGuest = null; setStatus('', '📷 Ожидание сканирования...'); }
+  if (id === 'modal-uncheck') pendingUncheckId = null;
+}
+
+// ── UNCHECK ──
+function confirmUncheck() {
+  const name = document.getElementById('md-name').textContent;
+  document.getElementById('mu-name').textContent = name;
+  closeModal('modal-dup');
+  openModal('modal-uncheck');
+}
+
+async function uncheckGuest() {
+  if (!pendingUncheckId) return;
+  const guestId = pendingUncheckId;
+  pendingUncheckId = null;
+  closeModal('modal-uncheck');
+  setStatus('load', '⏳ Отменяем регистрацию...');
+  try {
+    const url = API_URL + '?id=' + encodeURIComponent(guestId) + '&guard=' + encodeURIComponent(getGuard()) + '&uncheck=1';
+    const r = await fetch(url);
+    const d = await r.json();
+    if (d.success) {
+      stats.dup = Math.max(0, stats.dup - 1);
+      setStatus('warn', '↩ Регистрация отменена');
+      addLog('uncheck', d.guest || { name: guestId }, nowTime());
+      vibrate([100, 50, 100]);
+    } else {
+      setStatus('err', '❌ Ошибка: ' + d.message);
+    }
+  } catch(e) {
+    setStatus('err', '❌ Ошибка соединения');
+  }
+  updateStats();
+  setTimeout(() => setStatus('', '📷 Ожидание сканирования...'), 2500);
 }
 
 // ── MANUAL / SEARCH ──
@@ -891,8 +985,8 @@ function setStatus(type, text) {
 }
 
 // ── LOG ──
-const LOG_LABELS = { ok: 'Зарегистрирован', dup: 'Уже отмечен', err: 'Ошибка' };
-const LOG_COLORS = { ok: 'var(--green)', dup: 'var(--yellow)', err: 'var(--red)' };
+const LOG_LABELS = { ok: 'Зарегистрирован', dup: 'Уже отмечен', err: 'Ошибка', uncheck: 'Отмена регистрации' };
+const LOG_COLORS = { ok: 'var(--green)', dup: 'var(--yellow)', err: 'var(--red)', uncheck: 'var(--red)' };
 
 function addLog(type, guest, time) {
   const list  = document.getElementById('log-list');
