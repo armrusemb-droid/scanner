@@ -1,0 +1,1277 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Регистрация гостей</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+
+  :root {
+    --bg:       #0a1628;
+    --bg2:      #111f38;
+    --bg3:      #162544;
+    --border:   #1e3a5f;
+    --accent:   #3b82f6;
+    --accent2:  #60a5fa;
+    --green:    #22c55e;
+    --yellow:   #f59e0b;
+    --red:      #ef4444;
+    --text:     #e2e8f0;
+    --muted:    #64748b;
+    --mono:     'JetBrains Mono', monospace;
+    --sans:     'Manrope', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .header-icon {
+    width: 38px; height: 38px;
+    background: linear-gradient(135deg, var(--accent), #1d4ed8);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  header h1 { font-size: 17px; font-weight: 800; letter-spacing: -0.3px; }
+
+  .guard-chip {
+    margin-left: auto; flex-shrink: 0;
+    display: flex; align-items: center; gap: 6px;
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 20px; padding: 5px 10px 5px 8px;
+    cursor: pointer; transition: border-color 0.2s;
+    max-width: 160px;
+  }
+  .guard-chip:active { border-color: var(--accent); }
+  .guard-chip-icon { font-size: 14px; flex-shrink: 0; }
+  .guard-chip-text {
+    font-size: 12px; font-weight: 700; color: var(--accent2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  /* ── SECTIONS ── */
+  .section {
+    margin: 12px 14px 0;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .section-title {
+    font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+    text-transform: uppercase; color: var(--muted);
+    padding: 10px 14px 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-body { padding: 12px 14px; }
+
+  /* ── INPUTS ── */
+  .field-row { display: flex; flex-direction: column; gap: 5px; }
+  .field-label { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: 0.4px; }
+  input[type="text"] {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type="text"]:focus { border-color: var(--accent); }
+  input[type="text"]::placeholder { color: var(--muted); }
+
+  /* ── SCANNER ── */
+  .scanner-outer {
+    margin: 12px 14px 0;
+    position: relative;
+    border-radius: 16px;
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 1;
+    /* Фиксируем для Firefox: явный контекст форматирования */
+    contain: layout;
+  }
+
+  /* #reader занимает весь контейнер абсолютно,
+     чтобы не влиять на высоту .scanner-outer */
+  #reader {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    overflow: hidden;
+  }
+
+  /* Видео растягивается на весь #reader */
+  #reader video {
+    border-radius: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+    display: block !important;
+  }
+
+  /* Скрываем ВСЕ внутренние элементы html5-qrcode кроме видео:
+     их рамку, шейдер, кнопки — мы рисуем свои поверх */
+  #reader img,
+  #reader canvas,
+  #reader div[style*="border"] {
+    display: none !important;
+  }
+
+  /* Внутренний div-обёртка библиотеки — убираем padding-bottom хак */
+  #reader > div {
+    position: absolute !important;
+    inset: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  /* ── Тонкие синие угловые метки — по углам ВСЕГО окна ── */
+  .corners-outer { position: absolute; inset: 0; pointer-events: none; }
+  .corner-o {
+    position: absolute; width: 22px; height: 22px;
+    border-color: rgba(96,165,250,0.7); border-style: solid; border-width: 0;
+    transition: border-color 0.3s;
+  }
+  .corner-o.tl { top: 14px; left: 14px; border-top-width: 1.5px; border-left-width: 1.5px; border-radius: 3px 0 0 0; }
+  .corner-o.tr { top: 14px; right: 14px; border-top-width: 1.5px; border-right-width: 1.5px; border-radius: 0 3px 0 0; }
+  .corner-o.bl { bottom: 14px; left: 14px; border-bottom-width: 1.5px; border-left-width: 1.5px; border-radius: 0 0 0 3px; }
+  .corner-o.br { bottom: 14px; right: 14px; border-bottom-width: 1.5px; border-right-width: 1.5px; border-radius: 0 0 3px 0; }
+  .corners-outer.success .corner-o { border-color: var(--green); }
+
+  /* ── Внутренняя зона сканирования — единый контейнер ── */
+  .scan-frame {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 65%;
+    aspect-ratio: 1 / 1;  /* квадрат без JS — работает в Firefox 89+ */
+    pointer-events: none;
+  }
+
+  /* Затемнение вокруг зоны */
+  .scan-frame::before {
+    content: '';
+    position: absolute; inset: 0;
+    box-shadow: 0 0 0 2000px rgba(0,0,0,0.38);
+    border-radius: 0;
+  }
+
+  /* Тонкая рамка зоны (едва заметная) */
+  .scan-box {
+    position: absolute; inset: 0;
+    border: 1px solid rgba(96,165,250,0.2);
+  }
+
+  /* Толстые угловые метки — строго по углам scan-frame */
+  .corners-inner { position: absolute; inset: 0; }
+  .corner-i {
+    position: absolute; width: 22px; height: 22px;
+    border-color: rgba(220,228,240,0.9); border-style: solid; border-width: 0;
+    transition: border-color 0.3s;
+  }
+  .corner-i.tl { top: 0; left: 0; border-top-width: 3px; border-left-width: 3px; }
+  .corner-i.tr { top: 0; right: 0; border-top-width: 3px; border-right-width: 3px; }
+  .corner-i.bl { bottom: 0; left: 0; border-bottom-width: 3px; border-left-width: 3px; }
+  .corner-i.br { bottom: 0; right: 0; border-bottom-width: 3px; border-right-width: 3px; }
+  .corners-inner.success .corner-i { border-color: var(--green); }
+
+  /* Сканирующая линия — во всю ширину внутренней рамки */
+  .scan-line {
+    position: absolute;
+    left: 0; width: 100%;
+    height: 2px;
+    background: linear-gradient(to right, transparent, var(--accent2), transparent);
+    border-radius: 2px;
+    animation: scanMove 2s ease-in-out infinite;
+  }
+  @keyframes scanMove {
+    0%   { top: 2%;  opacity: 0; }
+    8%   { opacity: 1; }
+    92%  { opacity: 1; }
+    100% { top: 98%; opacity: 0; }
+  }
+
+  /* Scan hint */
+  .scan-hint {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    padding: 10px 16px;
+    background: linear-gradient(to top, rgba(0,0,0,0.75), transparent);
+    font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.75);
+    text-align: center; letter-spacing: 0.3px;
+  }
+
+  /* ── MANUAL BUTTON ── */
+  .btn-manual {
+    margin: 10px 14px 0;
+    width: calc(100% - 28px);
+    padding: 11px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--accent2);
+    font-family: var(--sans);
+    font-size: 13px; font-weight: 700;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .btn-manual:active { background: var(--bg2); }
+
+  /* ── STATS ── */
+  .stats {
+    margin: 10px 14px 0;
+    display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+  }
+  .stat {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 6px;
+    text-align: center;
+  }
+  .stat-num { font-size: 20px; font-weight: 800; font-family: var(--mono); }
+  .stat-num.blue   { color: var(--accent2); }
+  .stat-num.yellow { color: var(--yellow); }
+  .stat-num.red    { color: var(--red); }
+  .stat-lbl { font-size: 9px; color: var(--muted); font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; margin-top: 2px; }
+
+  /* ── LOG ── */
+  .log-wrap {
+    margin: 10px 14px 16px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .log-header {
+    padding: 10px 14px;
+    font-size: 10px; font-weight: 700; letter-spacing: 1.2px;
+    text-transform: uppercase; color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  #log-list { max-height: 180px; overflow-y: auto; }
+  .log-item {
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(30,58,95,0.5);
+    display: flex; align-items: center; gap: 10px;
+    animation: fadeSlide 0.25s ease;
+  }
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .log-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .log-dot.ok      { background: var(--green); }
+  .log-dot.dup     { background: var(--yellow); }
+  .log-dot.err     { background: var(--red); }
+  .log-dot.uncheck { background: var(--red); opacity: 0.6; }
+  .log-name { flex: 1; font-size: 12px; color: #93c5fd; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .log-time { font-size: 10px; color: var(--muted); font-family: var(--mono); white-space: nowrap; }
+  .log-empty { padding: 16px; text-align: center; font-size: 12px; color: var(--muted); }
+
+  /* ── MODAL OVERLAY ── */
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center; justify-content: center;
+    padding: 20px;
+    backdrop-filter: blur(4px);
+  }
+  .modal-overlay.active { display: flex; }
+
+  .modal {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    width: 100%; max-width: 360px;
+    overflow: hidden;
+    animation: modalIn 0.2s ease;
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: scale(0.93); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+
+  .modal-header {
+    padding: 16px 18px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .modal-icon {
+    width: 34px; height: 34px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .modal-icon.new  { background: rgba(34,197,94,0.15); }
+  .modal-icon.dup  { background: rgba(245,158,11,0.15); }
+  .modal-icon.err  { background: rgba(239,68,68,0.15); }
+  .modal-icon.input { background: rgba(59,130,246,0.15); }
+  .modal-title { font-size: 13px; font-weight: 800; letter-spacing: -0.2px; }
+  .modal-sub   { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+  .modal-body { padding: 14px 18px; }
+
+  .guest-appeal {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.3px;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+  .guest-name {
+    font-size: 20px; font-weight: 800; letter-spacing: -0.4px;
+    line-height: 1.2; margin-bottom: 4px;
+  }
+  .guest-org  { font-size: 13px; color: var(--accent2); font-weight: 600; margin-bottom: 2px; }
+  .guest-pos  { font-size: 12px; color: var(--muted); }
+
+  .info-row {
+    display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap;
+  }
+  .info-badge {
+    padding: 4px 10px; border-radius: 20px;
+    font-size: 11px; font-weight: 700; font-family: var(--mono);
+  }
+  .info-badge.id     { background: var(--bg3); color: var(--accent2); border: 1px solid var(--border); }
+  .info-badge.time   { background: rgba(34,197,94,0.12); color: var(--green); }
+  .info-badge.warn   { background: rgba(245,158,11,0.12); color: var(--yellow); }
+  .info-badge.guard  { background: rgba(59,130,246,0.12); color: var(--accent2); }
+
+  .modal-footer {
+    padding: 12px 18px 16px;
+    display: flex; gap: 8px;
+  }
+  .btn {
+    flex: 1; padding: 12px;
+    border: none; border-radius: 10px;
+    font-family: var(--sans); font-size: 14px; font-weight: 700;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn:active { opacity: 0.8; }
+  .btn-confirm { background: var(--green); color: #fff; }
+  .btn-cancel  { background: var(--bg3); color: var(--muted); border: 1px solid var(--border); }
+  .btn-ok      { background: var(--accent); color: #fff; flex: 1; }
+  .btn-close   { background: var(--bg3); color: var(--muted); border: 1px solid var(--border); }
+  .btn-uncheck { background: var(--bg3); color: var(--red); border: 1px solid rgba(239,68,68,0.3); font-size: 12px; }
+
+  /* Dossier grid for dup modal */
+  .dossier {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 1px; margin-top: 12px;
+    background: var(--border); border-radius: 8px; overflow: hidden;
+  }
+  .dossier-cell {
+    background: var(--bg3); padding: 7px 10px;
+  }
+  .dossier-cell.full { grid-column: 1 / -1; }
+  .dossier-label {
+    font-size: 9px; font-weight: 700; letter-spacing: 0.8px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 2px;
+  }
+  .dossier-value {
+    font-size: 12px; font-weight: 700; color: var(--text);
+    font-family: var(--mono);
+  }
+  .dossier-value.accent { color: var(--accent2); }
+  .dossier-value.warn   { color: var(--yellow); }
+
+  /* Search tabs */
+  .search-tabs {
+    display: flex; gap: 4px;
+    background: var(--bg3); border-radius: 8px; padding: 3px;
+  }
+  .search-tab {
+    flex: 1; padding: 7px;
+    background: transparent; border: none; border-radius: 6px;
+    font-family: var(--sans); font-size: 12px; font-weight: 700;
+    color: var(--muted); cursor: pointer; transition: all 0.15s;
+  }
+  .search-tab.active {
+    background: var(--bg2); color: var(--accent2);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+  }
+
+  /* Search result cards */
+  .search-card {
+    padding: 9px 12px; border-radius: 8px;
+    background: var(--bg3); border: 1px solid var(--border);
+    margin-bottom: 6px; cursor: pointer;
+    display: flex; align-items: center; gap: 10px;
+    transition: border-color 0.15s;
+  }
+  .search-card:active { border-color: var(--accent); }
+  .search-card-info { flex: 1; min-width: 0; }
+  .search-card-name { font-size: 13px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .search-card-sub  { font-size: 11px; color: var(--accent2); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .search-card-id   { font-size: 10px; font-family: var(--mono); color: var(--muted); margin-top: 2px; }
+  .search-card-status { flex-shrink: 0; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 10px; }
+  .search-card-status.checked { background: rgba(245,158,11,0.15); color: var(--yellow); }
+  .search-card-status.free    { background: rgba(34,197,94,0.12);  color: var(--green); }
+  .search-hint { font-size: 11px; color: var(--muted); text-align: center; padding: 16px 0; }
+
+  /* Manual input modal */
+  .prefix-input {
+    display: flex; align-items: center;
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 8px; overflow: hidden; margin-top: 10px;
+  }
+  .prefix-label {
+    padding: 10px 12px;
+    font-family: var(--mono); font-size: 14px; font-weight: 700;
+    color: var(--accent2); background: var(--bg2);
+    border-right: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .prefix-input input {
+    flex: 1; background: transparent; border: none;
+    padding: 10px 12px; color: var(--text);
+    font-family: var(--mono); font-size: 18px; font-weight: 700;
+    outline: none; letter-spacing: 2px;
+  }
+  .prefix-input input::placeholder { color: var(--muted); font-size: 14px; letter-spacing: 0; }
+
+  /* Status pill */
+  #status-pill {
+    margin: 8px 14px 0;
+    padding: 9px 14px;
+    border-radius: 10px;
+    font-size: 12px; font-weight: 700;
+    text-align: center;
+    background: var(--bg3);
+    color: var(--muted);
+    border: 1px solid var(--border);
+    transition: all 0.25s;
+  }
+  #status-pill.ok     { background: rgba(34,197,94,0.1);  color: var(--green);  border-color: rgba(34,197,94,0.3); }
+  #status-pill.warn   { background: rgba(245,158,11,0.1); color: var(--yellow); border-color: rgba(245,158,11,0.3); }
+  #status-pill.err    { background: rgba(239,68,68,0.1);  color: var(--red);    border-color: rgba(239,68,68,0.3); }
+  #status-pill.load   { background: rgba(59,130,246,0.1); color: var(--accent2);border-color: rgba(59,130,246,0.3); }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="header-icon">🎫</div>
+  <div>
+    <h1>Регистрация гостей</h1>
+  </div>
+  <div class="guard-chip" onclick="openGuardModal(false)" id="guard-chip">
+    <span class="guard-chip-icon">👮</span>
+    <span class="guard-chip-text" id="guard-chip-name">—</span>
+  </div>
+</header>
+
+<!-- SCANNER -->
+<div class="scanner-outer">
+  <div id="reader"></div>
+  <!-- Тонкие синие метки по углам всего окна -->
+  <div class="corners-outer" id="scan-corners-outer">
+    <div class="corner-o tl"></div>
+    <div class="corner-o tr"></div>
+    <div class="corner-o bl"></div>
+    <div class="corner-o br"></div>
+  </div>
+  <!-- Внутренняя рамка с толстыми угловыми метками и линией -->
+  <div class="scan-frame">
+    <div class="scan-box"></div>
+    <div class="corners-inner" id="scan-corners-inner">
+      <div class="corner-i tl"></div>
+      <div class="corner-i tr"></div>
+      <div class="corner-i bl"></div>
+      <div class="corner-i br"></div>
+    </div>
+    <div class="scan-line"></div>
+  </div>
+  <div class="scan-hint">Наведите камеру на QR-код гостя</div>
+</div>
+
+<!-- STATUS -->
+<div id="status-pill">📷 Ожидание сканирования...</div>
+
+<!-- MANUAL BUTTON -->
+<button class="btn-manual" onclick="openManual()">
+  🔍 Найти гостя вручную
+</button>
+
+<!-- STATS -->
+<div class="stats">
+  <div class="stat">
+    <div class="stat-num blue" id="cnt-ok">0</div>
+    <div class="stat-lbl">Отмечено</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num yellow" id="cnt-dup">0</div>
+    <div class="stat-lbl">Повторно</div>
+  </div>
+  <div class="stat">
+    <div class="stat-num red" id="cnt-err">0</div>
+    <div class="stat-lbl">Ошибок</div>
+  </div>
+</div>
+
+<!-- LOG -->
+<div class="log-wrap">
+  <div class="log-header">Последние отметки</div>
+  <div id="log-list">
+    <div class="log-empty">Сканирований пока нет</div>
+  </div>
+</div>
+
+
+<!-- ══ MODAL: НОВЫЙ ГОСТЬ ══ -->
+<div class="modal-overlay" id="modal-new">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon new">✅</div>
+      <div>
+        <div class="modal-title">Гость найден</div>
+        <div class="modal-sub">Подтвердите регистрацию</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="guest-appeal" id="mn-appeal"></div>
+      <div class="guest-name" id="mn-name">—</div>
+      <div class="guest-org"  id="mn-org">—</div>
+      <div class="guest-pos"  id="mn-pos">—</div>
+      <div class="info-row">
+        <span class="info-badge id" id="mn-id">—</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-cancel" onclick="closeModal('modal-new')">Отмена</button>
+      <button class="btn btn-confirm" onclick="confirmGuest()">✓ Зарегистрировать</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: УЖЕ ОТМЕЧЕН ══ -->
+<div class="modal-overlay" id="modal-dup">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon dup">⚠️</div>
+      <div>
+        <div class="modal-title">Уже зарегистрирован</div>
+        <div class="modal-sub">Гость был отмечен ранее</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="guest-appeal" id="md-appeal"></div>
+      <div class="guest-name"   id="md-name">—</div>
+      <div class="guest-org"    id="md-org">—</div>
+      <div class="guest-pos"    id="md-pos">—</div>
+      <div class="dossier">
+        <div class="dossier-cell">
+          <div class="dossier-label">ID гостя</div>
+          <div class="dossier-value accent" id="md-id">—</div>
+        </div>
+        <div class="dossier-cell">
+          <div class="dossier-label">Комендант</div>
+          <div class="dossier-value" id="md-guard">—</div>
+        </div>
+        <div class="dossier-cell">
+          <div class="dossier-label">Дата отметки</div>
+          <div class="dossier-value warn" id="md-date">—</div>
+        </div>
+        <div class="dossier-cell">
+          <div class="dossier-label">Время отметки</div>
+          <div class="dossier-value warn" id="md-time">—</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer" style="flex-direction:column; gap:6px;">
+      <button class="btn btn-ok"      onclick="closeModal('modal-dup')">Понятно</button>
+      <button class="btn btn-uncheck" onclick="confirmUncheck()">↩ Отменить регистрацию</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: ПОДТВЕРЖДЕНИЕ ОТМЕНЫ ══ -->
+<div class="modal-overlay" id="modal-uncheck">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon err" style="font-size:14px">↩</div>
+      <div>
+        <div class="modal-title">Отменить регистрацию?</div>
+        <div class="modal-sub">Отметка о прибытии будет удалена</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:13px; color:var(--muted); line-height:1.6;">
+        Данные о времени и дате прибытия гостя
+        <span id="mu-name" style="color:var(--text); font-weight:700;"></span>
+        будут стёрты. Действие записывается в журнал.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-cancel" onclick="closeModal('modal-uncheck')">Назад</button>
+      <button class="btn" style="background:var(--red);color:#fff;" onclick="uncheckGuest()">Да, отменить</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: КОМЕНДАНТ ══ -->
+<div class="modal-overlay" id="modal-guard">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon input">👮</div>
+      <div>
+        <div class="modal-title" id="mg-title">Добро пожаловать!</div>
+        <div class="modal-sub">Представьтесь, пожалуйста</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:13px;color:var(--muted);line-height:1.5;margin-bottom:10px" id="mg-hint">
+        Для начала работы введите ваше ФИО. Оно будет отображаться в журнале при каждой регистрации.
+      </div>
+      <input type="text" id="guard-name-input" placeholder="Петров П.П." style="font-size:15px;font-weight:600;">
+    </div>
+    <div class="modal-footer" id="mg-footer">
+      <button class="btn btn-confirm" onclick="saveGuard()">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: НЕ НАЙДЕН ══ -->
+<div class="modal-overlay" id="modal-err">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon err">❌</div>
+      <div>
+        <div class="modal-title" id="me-title">Гость не найден</div>
+        <div class="modal-sub" id="me-sub">ID отсутствует в базе данных</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:13px; color:var(--muted); line-height:1.5;" id="me-text">
+        Проверьте правильность QR-кода или введите ID вручную.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ok" onclick="closeModal('modal-err')">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: РУЧНОЙ ПОИСК ══ -->
+<div class="modal-overlay" id="modal-manual">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-icon input">⌨️</div>
+      <div>
+        <div class="modal-title">Найти гостя</div>
+        <div class="modal-sub">По номеру или по ФИО</div>
+      </div>
+    </div>
+    <div class="modal-body" style="padding-bottom:8px">
+
+      <!-- Вкладки -->
+      <div class="search-tabs">
+        <button class="search-tab active" id="tab-id"  onclick="switchTab('id')">По номеру</button>
+        <button class="search-tab"        id="tab-name" onclick="switchTab('name')">По ФИО</button>
+      </div>
+
+      <!-- Панель: по ID -->
+      <div id="panel-id">
+        <div class="prefix-input" style="margin-top:10px">
+          <div class="prefix-label">GUEST-</div>
+          <input type="text" id="manual-num" inputmode="numeric" pattern="[0-9]*" placeholder="0001" maxlength="6">
+        </div>
+      </div>
+
+      <!-- Панель: по ФИО -->
+      <div id="panel-name" style="display:none">
+        <input type="text" id="search-name" placeholder="Введите часть ФИО..." style="margin-top:10px"
+               oninput="onSearchInput()">
+        <div id="search-results" style="margin-top:8px; max-height:220px; overflow-y:auto;"></div>
+      </div>
+
+    </div>
+    <div class="modal-footer" id="manual-footer">
+      <button class="btn btn-cancel" onclick="closeModal('modal-manual')">Отмена</button>
+      <button class="btn btn-ok" id="btn-submit-id" onclick="submitManual()">Проверить</button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+// ── CONFIG ──
+// URL скрипта читается из config.json через raw.githubusercontent.com
+const GITHUB_USER = 'armrusemb-droid';
+const GITHUB_REPO = 'scanner';
+const CONFIG_URL  = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/config.json`;
+
+let API_URL = '';
+let pendingGuest = null;
+let pendingUncheckId = null;
+let lastScanned = '';
+let lastTime = 0;
+let stats = { ok: 0, dup: 0, err: 0 };
+let scanning = true;
+let clientIP  = '';
+let clientUA  = '';
+
+// Определяем UA: модель берём из строки UA (там читаемое название),
+// браузер — из userAgentData если доступен (точнее версия), иначе из строки UA.
+async function detectUA() {
+  const ua = navigator.userAgent;
+
+  // ── Модель и OS из строки UA (всегда читаемо) ──
+  let os = 'Unknown OS', model = '';
+  const mAndroid = ua.match(/Android ([0-9.]+)/);
+  if (mAndroid) {
+    os = 'Android ' + mAndroid[1];
+    // До Chrome 110 модель явно в UA: "Android 11; Redmi Note 10S Build/..."
+    // После Chrome 110 модель заменена на "K" — тогда model останется пустым
+    const mModel = ua.match(/;\s*([^;)]+?)\s+Build\//);
+    if (mModel && mModel[1].trim() !== 'K') model = mModel[1].trim();
+  } else if (/iPhone OS ([0-9_]+)/.test(ua)) {
+    os = 'iOS ' + ua.match(/iPhone OS ([0-9_]+)/)[1].replace(/_/g, '.'); model = 'iPhone';
+  } else if (/iPad.*OS ([0-9_]+)/.test(ua)) {
+    os = 'iPadOS ' + ua.match(/OS ([0-9_]+)/)[1].replace(/_/g, '.'); model = 'iPad';
+  } else if (/Windows NT/.test(ua)) { os = 'Windows'; model = 'PC'; }
+  else if (/Mac OS X/.test(ua))     { os = 'macOS';   model = 'Mac'; }
+  else if (/Linux/.test(ua))        { os = 'Linux';   model = 'PC'; }
+
+  // ── Браузер: userAgentData точнее (полная версия), иначе парсим строку ──
+  let br = '';
+  if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+    try {
+      const d = await navigator.userAgentData.getHighEntropyValues(['brands']);
+      const brand = (d.brands || [])
+        .filter(b => !/not.a.brand/i.test(b.brand))
+        .sort((a, b) => parseInt(b.version) - parseInt(a.version))[0];
+      if (brand) br = brand.brand.replace('Google Chrome', 'Chrome').replace('Microsoft Edge', 'Edge') + ' ' + brand.version;
+    } catch(e) { /* fallback */ }
+  }
+  if (!br) {
+    if (/Chrome\/([0-9]+)/.test(ua) && !/Edg|OPR/.test(ua)) br = 'Chrome ' + ua.match(/Chrome\/([0-9]+)/)[1];
+    else if (/Firefox\/([0-9]+)/.test(ua)) br = 'Firefox ' + ua.match(/Firefox\/([0-9]+)/)[1];
+    else if (/Edg\/([0-9]+)/.test(ua))     br = 'Edge '    + ua.match(/Edg\/([0-9]+)/)[1];
+    else if (/OPR\/([0-9]+)/.test(ua))     br = 'Opera '   + ua.match(/OPR\/([0-9]+)/)[1];
+    else if (/Safari\//.test(ua))          br = 'Safari';
+  }
+
+  return (model ? model + ' · ' : '') + os + (br ? ' / ' + br : '');
+}
+
+// Вспомогательная функция — добавляет ip и ua к любому URL
+function addMeta(url) {
+  return url
+    + '&ip=' + encodeURIComponent(clientIP)
+    + '&ua=' + encodeURIComponent(clientUA);
+}
+
+// ── LOAD CONFIG ──
+async function loadConfig() {
+  try {
+    const r = await fetch(CONFIG_URL + '?t=' + Date.now());
+    const cfg = await r.json();
+    API_URL = cfg.api_url || '';
+  } catch(e) {
+    API_URL = localStorage.getItem('guestApiUrl') || '';
+  }
+}
+
+// ── GUARD NAME ──
+let guardName = localStorage.getItem('guardName') || '';
+
+function getGuard() { return guardName || 'Не указан'; }
+
+function updateGuardChip() {
+  document.getElementById('guard-chip-name').textContent = guardName || 'Не указан';
+}
+
+function openGuardModal(required) {
+  // required=true — первый запуск, нельзя закрыть без ввода
+  document.getElementById('mg-title').textContent = required ? 'Добро пожаловать!' : 'Смена коменданта';
+  document.getElementById('mg-hint').textContent  = required
+    ? 'Для начала работы введите ваше ФИО. Оно будет отображаться в журнале при каждой регистрации.'
+    : 'Измените ФИО дежурного коменданта.';
+  // Показываем/скрываем кнопку отмены
+  const footer = document.getElementById('mg-footer');
+  footer.innerHTML = required
+    ? '<button class="btn btn-confirm" onclick="saveGuard()">Начать работу</button>'
+    : '<button class="btn btn-cancel" onclick="closeModal(\'modal-guard\')">Отмена</button><button class="btn btn-confirm" onclick="saveGuard()">Сохранить</button>';
+  document.getElementById('guard-name-input').value = guardName;
+  // required-модал нельзя закрыть кликом по оверлею
+  const overlay = document.getElementById('modal-guard');
+  overlay.onclick = required ? null : (e => { if (e.target === overlay) closeModal('modal-guard'); });
+  openModal('modal-guard');
+  setTimeout(() => document.getElementById('guard-name-input').focus(), 150);
+}
+
+function saveGuard() {
+  const val = document.getElementById('guard-name-input').value.trim();
+  if (!val) {
+    document.getElementById('guard-name-input').style.borderColor = 'var(--red)';
+    setTimeout(() => document.getElementById('guard-name-input').style.borderColor = '', 1000);
+    return;
+  }
+  guardName = val;
+  localStorage.setItem('guardName', guardName);
+  updateGuardChip();
+  closeModal('modal-guard');
+}
+
+// Enter в поле коменданта
+document.getElementById('guard-name-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') saveGuard();
+});
+
+// ── SCANNER ──
+const html5QrCode = new Html5Qrcode("reader");
+
+// Показываем имя коменданта в шапке сразу
+updateGuardChip();
+
+loadConfig().then(async () => {
+  // Определяем устройство (async — для userAgentData API)
+  clientUA = await detectUA();
+
+  // Получаем внешний IP один раз при загрузке
+  try {
+    const r = await fetch('https://api.ipify.org?format=json');
+    const d = await r.json();
+    clientIP = d.ip || '';
+  } catch(e) { clientIP = 'unknown'; }
+
+  // Если имя не задано — показываем обязательный модал
+  if (!guardName) {
+    openGuardModal(true);
+  }
+
+  Html5Qrcode.getCameras().then(cams => {
+    if (!cams.length) { setStatus('err', '❌ Камера не найдена'); return; }
+
+    const config = {
+      fps: 10,
+      // qrbox как функция — пересчитывается от реального размера видео.
+      // Это устраняет смещение в Firefox, где видео может иметь иные пиксельные размеры.
+      qrbox: (w, h) => {
+        const size = Math.round(Math.min(w, h) * 0.65);
+        return { width: size, height: size };
+      }
+    };
+
+    // Предпочитаем заднюю камеру
+    const cam = cams.find(c => /back|rear|environment/i.test(c.label)) || cams[cams.length - 1];
+
+    // Сначала пробуем по ID камеры, при ошибке — по facingMode (Firefox)
+    html5QrCode.start(cam.id, config, onScan, () => {})
+      .then(() => { fixScanFrame(); setTimeout(fixScanFrame, 500); })
+      .catch(() => {
+        html5QrCode.start(
+          { facingMode: 'environment' }, config, onScan, () => {}
+        ).then(() => { fixScanFrame(); setTimeout(fixScanFrame, 500); })
+         .catch(() => setStatus('err', '❌ Нет доступа к камере'));
+      });
+  }).catch(() => {
+    html5QrCode.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 200, height: 200 } },
+      onScan, () => {}
+    ).then(() => { fixScanFrame(); setTimeout(fixScanFrame, 500); })
+     .catch(() => setStatus('err', '❌ Нет доступа к камере'));
+  });
+});
+
+function onScan(text) {
+  const now = Date.now();
+  if (text === lastScanned && now - lastTime < 3500) return;
+  lastScanned = text; lastTime = now;
+  const co = document.getElementById('scan-corners-outer');
+  const ci = document.getElementById('scan-corners-inner');
+  if (co) { co.classList.add('success'); setTimeout(() => co.classList.remove('success'), 800); }
+  if (ci) { ci.classList.add('success'); setTimeout(() => ci.classList.remove('success'), 800); }
+  processID(text.trim());
+}
+
+// ── PROCESS ──
+async function processID(id) {
+  if (!id) return;
+  if (!API_URL) {
+    showErr('Не настроен API URL', 'Добавьте файл config.json с адресом скрипта.');
+    return;
+  }
+  // setTimeout вырывает вызов из потока камеры — Chrome разрешает vibrate() только так
+  setTimeout(() => vibrate([40, 30, 80]), 0);
+  setStatus('load', '⏳ Проверяем...');
+
+  try {
+    const url = addMeta(`${API_URL}?id=${encodeURIComponent(id)}&guard=${encodeURIComponent(getGuard())}`);
+    const r = await fetch(url);
+    const d = await r.json();
+
+    if (d.success) {
+      // Новый гость — показываем модал подтверждения
+      pendingGuest = { id, data: d };
+      showModalNew(d.guest);
+      setStatus('ok', '✅ Гость найден — подтвердите');
+    } else if (d.alreadyChecked) {
+      stats.dup++;
+      showModalDup(d.guest);
+      setStatus('warn', '⚠️ Гость уже был отмечен');
+      addLog('dup', d.guest, nowTime());
+      vibrate([300]);
+    } else {
+      stats.err++;
+      showErr(d.message || 'Гость не найден', `ID: ${id}`);
+      setStatus('err', '❌ ' + (d.message || 'Не найден'));
+      addLog('err', { name: id, org: '', id: '' }, nowTime());
+      vibrate([500]);
+    }
+  } catch(e) {
+    stats.err++;
+    setStatus('err', '❌ Нет соединения');
+    addLog('err', { name: id + ' (нет связи)', org: '', id: '' }, nowTime());
+  }
+  updateStats();
+}
+
+// ── CONFIRM ──
+async function confirmGuest() {
+  if (!pendingGuest) return;
+  const guestId = pendingGuest.id;
+  const guardName = getGuard();
+  pendingGuest = null;
+  closeModal('modal-new');
+  setStatus('load', '⏳ Регистрируем...');
+  if (!API_URL) { setStatus('err', '❌ Не настроен API URL'); return; }
+
+  try {
+    const url = addMeta(API_URL + '?id=' + encodeURIComponent(guestId) + '&guard=' + encodeURIComponent(guardName) + '&confirm=1');
+    const r = await fetch(url);
+    const d = await r.json();
+
+    if (d.success) {
+      stats.ok++;
+      setStatus('ok', '✅ Зарегистрирован: ' + (d.guest ? d.guest.name : ''));
+      addLog('ok', d.guest || { name: guestId }, nowTime());
+      vibrate([80, 40, 80]);
+    } else {
+      stats.err++;
+      setStatus('err', '❌ Ошибка: ' + d.message);
+    }
+  } catch(e) {
+    stats.err++;
+    setStatus('err', '❌ Ошибка соединения при регистрации');
+    console.error('confirmGuest error:', e);
+  }
+
+  updateStats();
+  setTimeout(() => setStatus('', '📷 Ожидание сканирования...'), 2500);
+}
+
+// ── MODALS ──
+function showModalNew(g) {
+  document.getElementById('mn-appeal').textContent = g.appeal || '';
+  document.getElementById('mn-name').textContent   = g.name || '—';
+  document.getElementById('mn-org').textContent    = g.org  || '—';
+  document.getElementById('mn-pos').textContent    = g.position || '—';
+  document.getElementById('mn-id').textContent     = g.id   || '—';
+  openModal('modal-new');
+}
+
+function formatCheckedDate(raw) {
+  if (!raw) return '—';
+  const s = raw.toString().trim();
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(s)) return s;
+  if (s.includes('T')) {
+    const d = new Date(s);
+    if (!isNaN(d)) return d.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric' });
+  }
+  return s || '—';
+}
+
+function formatCheckedTime(raw) {
+  if (!raw) return '';
+  const s = raw.toString().trim();
+  if (/^\d{2}:\d{2}(:\d{2})?$/.test(s)) return s.slice(0, 5);
+  if (s.includes('T')) {
+    const d = new Date(s);
+    if (!isNaN(d)) {
+      const hh = String(d.getUTCHours()).padStart(2, '0');
+      const mm = String(d.getUTCMinutes()).padStart(2, '0');
+      return `${hh}:${mm}`;
+    }
+  }
+  return s;
+}
+
+function showModalDup(g) {
+  pendingUncheckId = g.id || null;
+  document.getElementById('md-appeal').textContent = g.appeal || '';
+  document.getElementById('md-name').textContent   = g.name || '—';
+  document.getElementById('md-org').textContent    = g.org  || '—';
+  document.getElementById('md-pos').textContent    = g.position || '—';
+  document.getElementById('md-id').textContent     = g.id   || '—';
+  const dateStr = formatCheckedDate(g.checkedDate);
+  const timeStr = formatCheckedTime(g.checkedTime);
+  document.getElementById('md-date').textContent   = dateStr;
+  document.getElementById('md-time').textContent   = timeStr || '—';
+  document.getElementById('md-guard').textContent  = g.guard || 'Не указан';
+  openModal('modal-dup');
+}
+
+function showErr(title, sub) {
+  document.getElementById('me-title').textContent = title;
+  document.getElementById('me-text').textContent  = sub || '';
+  openModal('modal-err');
+}
+
+function openModal(id) {
+  document.getElementById(id).classList.add('active');
+}
+function closeModal(id) {
+  document.getElementById(id).classList.remove('active');
+  if (id === 'modal-new' && pendingGuest) { pendingGuest = null; setStatus('', '📷 Ожидание сканирования...'); }
+  if (id === 'modal-uncheck') pendingUncheckId = null;
+}
+
+// ── UNCHECK ──
+function confirmUncheck() {
+  const name = document.getElementById('md-name').textContent;
+  document.getElementById('mu-name').textContent = name;
+  closeModal('modal-dup');
+  openModal('modal-uncheck');
+}
+
+async function uncheckGuest() {
+  if (!pendingUncheckId) return;
+  const guestId = pendingUncheckId;
+  pendingUncheckId = null;
+  closeModal('modal-uncheck');
+  setStatus('load', '⏳ Отменяем регистрацию...');
+  try {
+    const url = addMeta(API_URL + '?id=' + encodeURIComponent(guestId) + '&guard=' + encodeURIComponent(getGuard()) + '&uncheck=1');
+    const r = await fetch(url);
+    const d = await r.json();
+    if (d.success) {
+      stats.dup = Math.max(0, stats.dup - 1);
+      setStatus('warn', '↩ Регистрация отменена');
+      addLog('uncheck', d.guest || { name: guestId }, nowTime());
+      vibrate([100, 50, 100]);
+    } else {
+      setStatus('err', '❌ Ошибка: ' + d.message);
+    }
+  } catch(e) {
+    setStatus('err', '❌ Ошибка соединения');
+  }
+  updateStats();
+  setTimeout(() => setStatus('', '📷 Ожидание сканирования...'), 2500);
+}
+
+// ── MANUAL / SEARCH ──
+let currentTab = 'id';
+let searchTimer = null;
+
+function openManual() {
+  currentTab = 'id';
+  document.getElementById('manual-num').value = '';
+  document.getElementById('search-name').value = '';
+  document.getElementById('search-results').innerHTML = '<div class="search-hint">Начните вводить ФИО</div>';
+  switchTab('id');
+  openModal('modal-manual');
+  setTimeout(() => document.getElementById('manual-num').focus(), 150);
+}
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-id').classList.toggle('active', tab === 'id');
+  document.getElementById('tab-name').classList.toggle('active', tab === 'name');
+  document.getElementById('panel-id').style.display   = tab === 'id'   ? '' : 'none';
+  document.getElementById('panel-name').style.display = tab === 'name' ? '' : 'none';
+  document.getElementById('btn-submit-id').style.display = tab === 'id' ? '' : 'none';
+  if (tab === 'name') setTimeout(() => document.getElementById('search-name').focus(), 100);
+  if (tab === 'id')   setTimeout(() => document.getElementById('manual-num').focus(), 100);
+}
+
+function submitManual() {
+  const num = document.getElementById('manual-num').value.trim();
+  if (!num) return;
+  const padded = num.padStart(4, '0');
+  const id = 'GUEST-' + padded;
+  closeModal('modal-manual');
+  processID(id);
+}
+
+function onSearchInput() {
+  clearTimeout(searchTimer);
+  const q = document.getElementById('search-name').value.trim();
+  if (q.length < 2) {
+    document.getElementById('search-results').innerHTML = '<div class="search-hint">Введите минимум 2 символа</div>';
+    return;
+  }
+  document.getElementById('search-results').innerHTML = '<div class="search-hint">⏳ Поиск...</div>';
+  searchTimer = setTimeout(() => doSearch(q), 400);
+}
+
+async function doSearch(q) {
+  if (!API_URL) {
+    document.getElementById('search-results').innerHTML = '<div class="search-hint">❌ Не настроен API URL</div>';
+    return;
+  }
+  try {
+    const url = addMeta(API_URL + '?search=' + encodeURIComponent(q));
+    const r = await fetch(url);
+    const d = await r.json();
+    if (!d.results || d.results.length === 0) {
+      // Логируем неудачный поиск
+      addLog('err', { name: '«' + q + '»', org: 'Поиск не дал результатов', id: '' }, nowTime());
+      stats.err++;
+      updateStats();
+    }
+    renderSearchResults(d.results || []);
+  } catch(e) {
+    document.getElementById('search-results').innerHTML = '<div class="search-hint">❌ Ошибка соединения</div>';
+  }
+}
+
+function renderSearchResults(results) {
+  const box = document.getElementById('search-results');
+  if (!results.length) {
+    box.innerHTML = '<div class="search-hint">Ничего не найдено</div>';
+    return;
+  }
+  box.innerHTML = results.map(g => {
+    const checked = g.checkedDate && g.checkedDate.toString().trim() !== '';
+    const statusClass = checked ? 'checked' : 'free';
+    const statusText  = checked ? '✓ Отмечен' : '○ Не отмечен';
+    return `
+      <div class="search-card" onclick="selectSearchResult('${g.id}')">
+        <div class="search-card-info">
+          <div class="search-card-name">${g.name}</div>
+          <div class="search-card-sub">${g.org || ''}</div>
+          <div class="search-card-id">${g.id}${g.position ? ' · ' + g.position : ''}</div>
+        </div>
+        <div class="search-card-status ${statusClass}">${statusText}</div>
+      </div>`;
+  }).join('');
+}
+
+function selectSearchResult(id) {
+  closeModal('modal-manual');
+  processID(id);
+}
+
+// ── STATUS ──
+function setStatus(type, text) {
+  const el = document.getElementById('status-pill');
+  el.className = type ? `${type}` : '';
+  el.textContent = text;
+}
+
+// ── LOG ──
+const LOG_LABELS = { ok: 'Зарегистрирован', dup: 'Уже отмечен', err: 'Ошибка', uncheck: 'Отмена регистрации' };
+const LOG_COLORS = { ok: 'var(--green)', dup: 'var(--yellow)', err: 'var(--red)', uncheck: 'var(--red)' };
+
+function addLog(type, guest, time) {
+  const list  = document.getElementById('log-list');
+  const empty = list.querySelector('.log-empty');
+  if (empty) empty.remove();
+
+  const name   = (typeof guest === 'object') ? (guest.name || '—')     : guest;
+  const org    = (typeof guest === 'object') ? (guest.org  || '')       : '';
+  const id     = (typeof guest === 'object') ? (guest.id   || '')       : '';
+  const label  = LOG_LABELS[type] || '';
+  const color  = LOG_COLORS[type] || 'var(--muted)';
+
+  const item = document.createElement('div');
+  item.className = 'log-item';
+  item.style.flexDirection = 'column';
+  item.style.alignItems    = 'flex-start';
+  item.style.gap           = '2px';
+  item.style.padding       = '9px 14px';
+  item.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;width:100%">
+      <div class="log-dot ${type}"></div>
+      <div class="log-name" style="flex:1">${name}</div>
+      <div class="log-time">${time}</div>
+    </div>
+    ${org ? `<div style="font-size:11px;color:var(--accent2);padding-left:15px;font-weight:600">${org}</div>` : ''}
+    <div style="display:flex;align-items:center;gap:6px;padding-left:15px">
+      ${id ? `<span style="font-size:10px;font-family:var(--mono);color:var(--muted)">${id}</span>` : ''}
+      <span style="font-size:10px;font-weight:700;color:${color}">${label}</span>
+    </div>
+  `;
+  list.insertBefore(item, list.firstChild);
+  while (list.children.length > 50) list.removeChild(list.lastChild);
+}
+
+function updateStats() {
+  document.getElementById('cnt-ok').textContent  = stats.ok;
+  document.getElementById('cnt-dup').textContent = stats.dup;
+  document.getElementById('cnt-err').textContent = stats.err;
+}
+
+function nowTime() {
+  return new Date().toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+}
+function vibrate(p) { if (navigator.vibrate) navigator.vibrate(p); }
+
+// Разблокируем Vibration API при первом касании экрана.
+// Chrome требует хотя бы одного пользовательского события перед первым вызовом vibrate().
+document.addEventListener('touchstart', () => {
+  if (navigator.vibrate) navigator.vibrate(0);
+}, { once: true, passive: true });
+
+// ── SCAN FRAME ──
+// CSS aspect-ratio: 1/1 обеспечивает квадрат в современных браузерах.
+// JS нужен только как фоллбэк для Firefox < 89 (без поддержки aspect-ratio).
+function fixScanFrame() {
+  const frame = document.querySelector('.scan-frame');
+  if (!frame) return;
+  if (!CSS.supports('aspect-ratio', '1')) {
+    const w = frame.getBoundingClientRect().width;
+    if (w > 0) frame.style.height = w + 'px';
+  }
+}
+
+if (window.ResizeObserver) {
+  new ResizeObserver(fixScanFrame).observe(document.querySelector('.scanner-outer'));
+}
+window.addEventListener('resize', fixScanFrame);
+window.addEventListener('load', fixScanFrame);
+[100, 300, 600, 1200, 2500].forEach(t => setTimeout(fixScanFrame, t));
+document.getElementById('manual-num').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitManual();
+});
+document.getElementById('search-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    clearTimeout(searchTimer);
+    const q = document.getElementById('search-name').value.trim();
+    if (q.length >= 2) doSearch(q);
+  }
+});
+</script>
+</body>
+</html>
