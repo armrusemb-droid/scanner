@@ -646,6 +646,15 @@ async function loadGuests() {
 //  ЗАПУСК ОСНОВНОГО ПРИЛОЖЕНИЯ
 // ════════════════════════════════════════════════════════
 
+async function getVersion() {
+  try {
+    const r = await fetch(API_URL + '?action=getVersion');
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d.version || null;
+  } catch(e) { return null; }
+}
+
 async function startApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('main-screen').style.display  = 'flex';
@@ -717,9 +726,12 @@ function updateSyncBadge(type, text) {
 //  СКАНЕР
 // ════════════════════════════════════════════════════════
 
-const html5QrCode = new Html5Qrcode('reader');
+let html5QrCode = null;
 
 function startScanner() {
+  if (!html5QrCode) {
+    html5QrCode = new Html5Qrcode('reader');
+  }
   const config = {
     fps: 10,
     qrbox: (w, h) => { const s = Math.round(Math.min(w,h) * 0.65); return { width: s, height: s }; }
