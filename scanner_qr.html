@@ -545,12 +545,12 @@ async function doLogin() {
     return;
   }
 
-  // Приоритет ключа: поле ввода → sessionStorage (из QR, только если поле пустое)
+  // Приоритет ключа: sessionStorage (из QR) → поле ввода
   const keyFromSession = sessionStorage.getItem('encKey') || '';
-  encKey    = keyInput || keyFromSession;
+  encKey    = keyFromSession || keyInput;
   guardName = guardInput;
 
-  // Сохраняем актуальные данные сессии
+  // Сохраняем имя коменданта
   sessionStorage.setItem('guardName', guardName);
   sessionStorage.setItem('encKey', encKey);
 
@@ -595,18 +595,29 @@ async function loadGuests() {
   if (!data.success) throw new Error(data.message || 'Ошибка получения гостей');
 
   const guests = data.guests || [];
+  console.log('[DEBUG] total guests from server:', guests.length);
+  if (guests.length > 0) {
+    console.log('[DEBUG] first guest keys:', Object.keys(guests[0]).join(', '));
+    console.log('[DEBUG] first guest raw:', JSON.stringify(guests[0]).slice(0, 200));
+  }
   if (guests.length === 0) { guestCache.clear(); return; }
 
   // Проверяем ключ на первом госте
   let keyOk = false;
   try {
-    const testJson = decodeField(guests[0].guest_enc, encKey);
+    const raw = guests[0].guest_enc;
+    console.log('[DEBUG] guest_enc prefix:', raw ? raw.slice(0,4) : 'EMPTY');
+    console.log('[DEBUG] encKey length:', encKey ? encKey.length : 0);
+    const testJson = decodeField(raw, encKey);
+    console.log('[DEBUG] decoded (first 80 chars):', testJson ? testJson.slice(0,80) : 'EMPTY');
     const testData = JSON.parse(testJson);
+    console.log('[DEBUG] parsed name:', testData ? testData.name : 'NO NAME');
     if (typeof testData === 'object' && testData !== null &&
         typeof testData.name === 'string' && testData.name.length > 0) {
       keyOk = true;
     }
   } catch(e) {
+    console.log('[DEBUG] key check error:', e.message);
     keyOk = false;
   }
   if (!keyOk) {
