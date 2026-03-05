@@ -163,14 +163,20 @@
   .log-item { padding:9px 14px; border-bottom:1px solid rgba(30,58,95,0.5); display:flex; flex-direction:column; gap:2px; animation:fadeSlide 0.25s ease; }
   @keyframes fadeSlide { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
   .log-row1 { display:flex; align-items:center; gap:8px; }
-  .log-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
-  .log-dot.ok { background:var(--green); } .log-dot.dup { background:var(--yellow); }
-  .log-dot.err { background:var(--red); } .log-dot.uncheck { background:var(--red); opacity:0.6; }
+  .log-icon { width:16px; height:16px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:13px; line-height:1; }
   .log-name { flex:1; font-size:12px; color:#93c5fd; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .log-time { font-size:10px; color:var(--muted); font-family:var(--mono); white-space:nowrap; }
-  .log-sub { font-size:11px; color:var(--accent2); padding-left:15px; font-weight:600; }
-  .log-label { font-size:10px; font-weight:700; padding-left:15px; }
+  .log-sub { font-size:11px; color:var(--accent2); padding-left:24px; font-weight:600; }
+  .log-label { font-size:10px; font-weight:700; padding-left:24px; display:flex; align-items:center; gap:6px; }
+  .log-sync-badge { font-size:9px; font-weight:700; padding:1px 5px; border-radius:4px; transition:all 0.4s; }
+  .log-sync-badge.syncing { background:rgba(251,191,36,0.2); color:#fbbf24; }
+  .log-sync-badge.synced  { background:rgba(52,211,153,0.15); color:#34d399; }
+  .log-sync-badge.local   { background:rgba(148,163,184,0.15); color:#94a3b8; }
   .log-empty { padding:16px; text-align:center; font-size:12px; color:var(--muted); }
+  /* Спиннер загрузки базы */
+  .load-spinner { display:inline-block; width:16px; height:16px; border:2px solid rgba(255,255,255,0.15); border-top-color:#60a5fa; border-radius:50%; animation:spin 0.75s linear infinite; vertical-align:middle; margin-right:7px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  #load-status { text-align:center; color:#93c5fd; font-size:13px; margin-top:12px; min-height:20px; }
 
   /* ── MODAL ── */
   .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; align-items:center; justify-content:center; padding:20px; backdrop-filter:blur(4px); }
@@ -252,6 +258,7 @@
         <div class="login-hint">Если данные загружены без шифрования — поле можно оставить пустым</div>
       </div>
       <button class="login-btn" onclick="doLogin()">Войти и загрузить данные</button>
+      <div id="load-status"></div>
       <div id="login-error"></div>
     </div>
   </div>
@@ -559,17 +566,29 @@ async function doLogin() {
   sessionStorage.setItem('guardName', guardName);
 
   showLoginError('');
-  document.getElementById('login-btn-text') && (document.querySelector('.login-btn').textContent = '⏳ Загрузка...');
-  document.querySelector('.login-btn').disabled = true;
-  document.querySelector('.login-btn').textContent = '⏳ Загружаем базу гостей...';
+  const btn = document.querySelector('.login-btn');
+  btn.disabled = true;
+  btn.textContent = 'Загружаем...';
+
+  function setLoadStatus(text) {
+    document.getElementById('load-status').innerHTML =
+      `<span class="load-spinner"></span>${text}`;
+  }
+  function clearLoadStatus() {
+    document.getElementById('load-status').innerHTML = '';
+  }
 
   try {
+    setLoadStatus('Подключение к серверу...');
     await loadConfig();
+    setLoadStatus('Загрузка базы гостей...');
     await loadGuests();
+    clearLoadStatus();
     startApp();
   } catch(e) {
-    document.querySelector('.login-btn').disabled = false;
-    document.querySelector('.login-btn').textContent = 'Войти и загрузить данные';
+    btn.disabled = false;
+    btn.textContent = 'Войти и загрузить данные';
+    clearLoadStatus();
     showLoginError('Ошибка загрузки: ' + e.message);
   }
 }
@@ -599,29 +618,26 @@ async function loadGuests() {
   if (!data.success) throw new Error(data.message || 'Ошибка получения гостей');
 
   const guests = data.guests || [];
-  console.log('[DEBUG] total guests from server:', guests.length);
-  if (guests.length > 0) {
-    console.log('[DEBUG] first guest keys:', Object.keys(guests[0]).join(', '));
-    console.log('[DEBUG] first guest raw:', JSON.stringify(guests[0]).slice(0, 200));
+
+  // Обновляем спиннер с реальным количеством
+  const loadEl = document.getElementById('load-status');
+  if (loadEl && guests.length > 0) {
+    loadEl.innerHTML = `<span class="load-spinner"></span>Расшифровка ${guests.length} гостей...`;
   }
+
   if (guests.length === 0) { guestCache.clear(); return; }
 
   // Проверяем ключ на первом госте
   let keyOk = false;
   try {
     const raw = guests[0].guest_enc;
-    console.log('[DEBUG] guest_enc prefix:', raw ? raw.slice(0,4) : 'EMPTY');
-    console.log('[DEBUG] encKey length:', encKey ? encKey.length : 0);
     const testJson = decodeField(raw, encKey);
-    console.log('[DEBUG] decoded (first 80 chars):', testJson ? testJson.slice(0,80) : 'EMPTY');
     const testData = JSON.parse(testJson);
-    console.log('[DEBUG] parsed name:', testData ? testData.name : 'NO NAME');
     if (typeof testData === 'object' && testData !== null &&
         typeof testData.name === 'string' && testData.name.length > 0) {
       keyOk = true;
     }
   } catch(e) {
-    console.log('[DEBUG] key check error:', e.message);
     keyOk = false;
   }
   if (!keyOk) {
@@ -822,7 +838,7 @@ async function confirmGuest() {
 
   stats.ok++;
   updateStats();
-  addLog('ok', guest, time);
+  const logId = addLog('ok', guest, time);
   setStatus('ok', '✅ Зарегистрирован: ' + guest.name);
   vibrate([80, 40, 80]);
 
@@ -837,12 +853,15 @@ async function confirmGuest() {
     setStatus('load', '⏳ Отправка на сервер...');
     const ok = await sendConfirm(guest.id, checkEnc, logData);
     if (ok) {
+      updateLogSync(logId, 'synced');
       setStatus('ok', '✅ Зарегистрирован: ' + guest.name);
     } else {
+      updateLogSync(logId, 'local');
       setStatus('warn', '📵 Сохранено локально — отправим при связи');
     }
   } else {
-    offlineQueue.push({ type: 'confirm', id: guest.id, check_enc: checkEnc, logData });
+    offlineQueue.push({ type: 'confirm', id: guest.id, check_enc: checkEnc, logData, logId });
+    updateLogSync(logId, 'local');
     updateSyncBadge('queue', `📵 Офлайн: ${offlineQueue.length} в очереди`);
   }
 
@@ -932,7 +951,7 @@ async function uncheckGuest() {
 
   stats.dup = Math.max(0, stats.dup - 1);
   updateStats();
-  addLog('uncheck', guest || { name: id, org: '' }, nowTime());
+  const uncheckLogId = addLog('uncheck', guest || { name: id, org: '' }, nowTime());
   setStatus('warn', '↩ Регистрация отменена');
   vibrate([100, 50, 100]);
 
@@ -949,10 +968,13 @@ async function uncheckGuest() {
       const body = JSON.stringify({ action: 'uncheck', id });
       await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body });
       await sendLog(logData);
+      updateLogSync(uncheckLogId, 'synced');
     } catch(e) {
+      updateLogSync(uncheckLogId, 'local');
       offlineQueue.push({ type: 'uncheck', id, logData });
     }
   } else {
+    updateLogSync(uncheckLogId, 'local');
     offlineQueue.push({ type: 'uncheck', id, logData });
     updateSyncBadge('queue', `📵 Офлайн: ${offlineQueue.length} в очереди`);
   }
@@ -1163,8 +1185,9 @@ function setStatus(type, text) {
   el.textContent = text;
 }
 
-const LOG_COLORS = { ok:'var(--green)', dup:'var(--yellow)', err:'var(--red)', uncheck:'var(--red)' };
-const LOG_LABELS = { ok:'Зарегистрирован', dup:'Уже отмечен', err:'Ошибка', uncheck:'Отмена' };
+const LOG_ICONS  = { ok:'✅', dup:'⚠️', err:'❌', uncheck:'↩️' };
+const LOG_COLORS = { ok:'var(--green)', dup:'var(--yellow)', err:'var(--red)', uncheck:'#94a3b8' };
+const LOG_LABELS = { ok:'Зарегистрирован', dup:'Уже отмечен', err:'Ошибка', uncheck:'Отмена регистрации' };
 
 function addLog(type, guest, time) {
   const list = document.getElementById('log-list');
@@ -1172,16 +1195,31 @@ function addLog(type, guest, time) {
   if (empty) empty.remove();
   const item = document.createElement('div');
   item.className = 'log-item';
+  const logId = 'log-' + Date.now() + '-' + Math.random().toString(36).slice(2,6);
+  item.setAttribute('data-log-id', logId);
+  const showSync = (type === 'ok' || type === 'uncheck');
+  const syncBadge = showSync
+    ? `<span class="log-sync-badge syncing" id="badge-${logId}">⏳ отправка</span>`
+    : '';
   item.innerHTML = `
     <div class="log-row1">
-      <div class="log-dot ${type}"></div>
+      <div class="log-icon">${LOG_ICONS[type] || '•'}</div>
       <div class="log-name">${esc(guest.name || '—')}</div>
       <div class="log-time">${time}</div>
     </div>
     ${guest.org ? `<div class="log-sub">${esc(guest.org)}</div>` : ''}
-    <div class="log-label" style="color:${LOG_COLORS[type]||'var(--muted)'};">${LOG_LABELS[type]||''}</div>`;
+    <div class="log-label" style="color:${LOG_COLORS[type]||'var(--muted)'};">${LOG_LABELS[type]||''}${syncBadge}</div>`;
   list.insertBefore(item, list.firstChild);
   while (list.children.length > 50) list.removeChild(list.lastChild);
+  return logId;
+}
+
+function updateLogSync(logId, state) {
+  const badge = document.getElementById('badge-' + logId);
+  if (!badge) return;
+  const labels = { syncing: '⏳ отправка', synced: '☁️ синхронизировано', local: '📵 локально' };
+  badge.className = 'log-sync-badge ' + state;
+  badge.textContent = labels[state] || state;
 }
 
 function updateStats() {
