@@ -627,15 +627,37 @@ async function removeQueueItemFromDB(dbKey) {
 }
 
 // ════════════════════════════════════════════════════════
-//  ШИФРОВАНИЕ — XOR идентичный VBA Module3
+//  ШИФРОВАНИЕ — AES-256-GCM через Web Crypto API
+//  Ключ: PBKDF2-SHA256, 100000 итераций
+//  Формат: aes:<base64(IV[12] + ciphertext + tag[16])>
+//  Формат: aes:<base64(IV[12] + ciphertext + tag[16])>
 // ════════════════════════════════════════════════════════
 
-function strToUtf8(str) {
-  return new TextEncoder().encode(str);
+const AES_SALT = 'GuestManagerV2_AES_SALT_2026';
+const AES_ITER = 100000;
+
+// Кеш производного ключа — не пересчитываем PBKDF2 каждый раз
+let _cachedCryptoKey = null;
+let _cachedPassword  = null;
+
+async function getCryptoKey(password) {
+  if (_cachedCryptoKey && _cachedPassword === password) return _cachedCryptoKey;
+  const pwdBytes  = new TextEncoder().encode(password);
+  const saltBytes = new TextEncoder().encode(AES_SALT);
+  const baseKey = await crypto.subtle.importKey(
+    'raw', pwdBytes, 'PBKDF2', false, ['deriveKey']
+  );
+  _cachedCryptoKey = await crypto.subtle.deriveKey(
+    { name: 'PBKDF2', salt: saltBytes, iterations: AES_ITER, hash: 'SHA-256' },
+    baseKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+  _cachedPassword = password;
+  return _cachedCryptoKey;
 }
-function utf8ToStr(bytes) {
-  return new TextDecoder().decode(bytes);
-}
+
 function base64Encode(bytes) {
   let b = '';
   bytes.forEach(byte => b += String.fromCharCode(byte));
@@ -647,34 +669,56 @@ function base64Decode(str) {
   for (let i = 0; i < b.length; i++) bytes[i] = b.charCodeAt(i);
   return bytes;
 }
-function xorEncrypt(text, key) {
-  const tb = strToUtf8(text);
-  const kb = strToUtf8(key);
-  const res = new Uint8Array(tb.length);
-  for (let i = 0; i < tb.length; i++) res[i] = tb[i] ^ kb[i % kb.length];
-  return base64Encode(res);
+
+async function encodeField(json, key) {
+  if (!key) {
+    const bytes = new TextEncoder().encode(json);
+    return 'raw:' + base64Encode(bytes);
+  }
+  try {
+    const cryptoKey = await getCryptoKey(key);
+    const iv        = crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = new TextEncoder().encode(json);
+    const cipher    = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv },
+      cryptoKey,
+      plaintext
+    );
+    // AES-GCM возвращает ciphertext + tag[16] вместе
+    const result = new Uint8Array(12 + cipher.byteLength);
+    result.set(iv, 0);
+    result.set(new Uint8Array(cipher), 12);
+    return 'aes:' + base64Encode(result);
+  } catch(e) {
+    // Fallback: raw если crypto.subtle недоступен
+    const bytes = new TextEncoder().encode(json);
+    return 'raw:' + base64Encode(bytes);
+  }
 }
-function xorDecrypt(encoded, key) {
-  const eb = base64Decode(encoded);
-  const kb = strToUtf8(key);
-  const res = new Uint8Array(eb.length);
-  for (let i = 0; i < eb.length; i++) res[i] = eb[i] ^ kb[i % kb.length];
-  return utf8ToStr(res);
-}
-function encodeField(json, key) {
-  if (!key) return 'raw:' + base64Encode(strToUtf8(json));
-  return 'enc:' + xorEncrypt(json, key);
-}
-function decodeField(encoded, key) {
+
+async function decodeField(encoded, key) {
   if (!encoded) return '';
   const prefix = encoded.slice(0, 4);
   const body   = encoded.slice(4);
-  if (prefix === 'enc:') {
+  if (prefix === 'aes:') {
     if (!key) return '[зашифровано — ключ не указан]';
-    return xorDecrypt(body, key);
+    try {
+      const cryptoKey = await getCryptoKey(key);
+      const raw = base64Decode(body);
+      const iv  = raw.slice(0, 12);
+      const ct  = raw.slice(12);
+      const plain = await crypto.subtle.decrypt(
+        { name: 'AES-GCM', iv },
+        cryptoKey,
+        ct
+      );
+      return new TextDecoder().decode(plain);
+    } catch(e) { return ''; }
   }
-  if (prefix === 'raw:') return utf8ToStr(base64Decode(body));
-  return encoded; // без префикса — как есть
+  if (prefix === 'raw:') {
+    return new TextDecoder().decode(base64Decode(body));
+  }
+  return encoded;
 }
 
 // ════════════════════════════════════════════════════════
@@ -711,6 +755,10 @@ async function doLogin() {
   encKey    = keyFromQr || keyInput;
   guardName = guardInput;
 
+  // Сбрасываем кеш производного ключа при каждом входе
+  _cachedCryptoKey = null;
+  _cachedPassword  = null;
+
   sessionStorage.setItem('guardName', guardName);
 
   showLoginError('');
@@ -743,7 +791,7 @@ async function doLogin() {
 
       if (localGuests.length > 0) {
         // Проверяем ключ на первом госте из кеша
-        const keyOk = checkEncKey(localGuests[0]);
+        const keyOk = await checkEncKey(localGuests[0]);
         if (!keyOk) throw new Error('Неверный ключ шифрования. Проверьте ключ и войдите снова.');
 
         await decodeGuestsInChunks(localGuests);
@@ -789,9 +837,9 @@ async function loadConfig() {
 }
 
 // Проверяет что ключ подходит к первой записи
-function checkEncKey(firstGuest) {
+async function checkEncKey(firstGuest) {
   try {
-    const testJson = decodeField(firstGuest.guest_enc, encKey);
+    const testJson = await decodeField(firstGuest.guest_enc, encKey);
     const testData = JSON.parse(testJson);
     return typeof testData === 'object' && testData !== null &&
            typeof testData.name === 'string' && testData.name.length > 0;
@@ -831,7 +879,7 @@ async function loadGuests() {
   if (guests.length === 0) { guestCache.clear(); return; }
 
   // Проверяем ключ
-  if (!checkEncKey(guests[0])) {
+  if (!await checkEncKey(guests[0])) {
     throw new Error('Неверный ключ шифрования. Проверьте ключ и войдите снова.');
   }
 
@@ -852,7 +900,7 @@ async function decodeGuestsInChunks(guests) {
     const slice = guests.slice(i, i + CHUNK);
     for (const g of slice) {
       try {
-        const gJson = decodeField(g.guest_enc, encKey);
+        const gJson = await decodeField(g.guest_enc, encKey);
         const gData = JSON.parse(gJson);
         guestCache.set(g.id, {
           id:        g.id,
@@ -1042,7 +1090,7 @@ async function confirmGuest() {
   const time  = now.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
 
   const checkData = { checkedDate: date, checkedTime: time, guard: guardName };
-  const checkEnc  = encodeField(JSON.stringify(checkData), encKey);
+  const checkEnc  = await encodeField(JSON.stringify(checkData), encKey);
 
   // Обновляем кеш немедленно
   guest.check_enc = checkEnc;
@@ -1095,7 +1143,7 @@ async function sendConfirm(id, checkEnc, logData) {
 
     if (d.alreadyChecked) {
       // Конфликт: кто-то зарегистрировал раньше
-      const existCheckJson = decodeField(d.check_enc, encKey);
+      const existCheckJson = await decodeField(d.check_enc, encKey);
       const existCheck = JSON.parse(existCheckJson);
 
       // Обновляем кеш реальными данными
@@ -1133,7 +1181,7 @@ function showConflictNotification(guest, existCheck) {
 
 async function sendLog(logData) {
   try {
-    const data_enc = encodeField(JSON.stringify(logData), encKey);
+    const data_enc = await encodeField(JSON.stringify(logData), encKey);
     const body = JSON.stringify({ action: 'log', timestamp: Date.now().toString(), data_enc });
     await fetch(API_URL, {
       method: 'POST',
@@ -1256,7 +1304,7 @@ function showModalDup(g) {
   let chkDate = '—', chkTime = '—', chkGuard = '—';
   if (g.check_enc) {
     try {
-      const cJson = decodeField(g.check_enc, encKey);
+      const cJson = await decodeField(g.check_enc, encKey);
       const c = JSON.parse(cJson);
       chkDate  = c.checkedDate  || '—';
       chkTime  = c.checkedTime  || '—';
