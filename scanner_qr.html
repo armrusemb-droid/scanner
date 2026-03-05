@@ -246,7 +246,7 @@
         <div class="login-label">Ваше ФИО</div>
         <input class="login-input" type="text" id="login-guard" placeholder="Петров П.П.">
       </div>
-      <div class="login-field">
+      <div class="login-field" id="key-field-wrap">
         <div class="login-label">Ключ шифрования</div>
         <input class="login-input" type="text" id="login-key" placeholder="Оставьте пустым если нет шифрования">
         <div class="login-hint">Если данные загружены без шифрования — поле можно оставить пустым</div>
@@ -524,12 +524,16 @@ function decodeField(encoded, key) {
 //  ЭКРАН ВХОДА
 // ════════════════════════════════════════════════════════
 
-// Проверяем ?key= в URL (QR с ключом)
+// Проверяем ?key= в URL (QR с ключом) — ключ НЕ сохраняем в sessionStorage,
+// он живёт только в памяти текущего сеанса. При обновлении страницы нужен повторный вход.
 (function() {
+  // Сбрасываем ключ при каждой загрузке страницы
+  sessionStorage.removeItem('encKey');
   const params = new URLSearchParams(window.location.search);
   const keyFromUrl = params.get('key');
   if (keyFromUrl) {
-    sessionStorage.setItem('encKey', keyFromUrl);
+    // Временно держим в sessionStorage только для передачи в doLogin()
+    sessionStorage.setItem('encKey_from_qr', keyFromUrl);
     // Убираем ключ из адресной строки
     history.replaceState(null, '', window.location.pathname);
   }
@@ -545,14 +549,14 @@ async function doLogin() {
     return;
   }
 
-  // Приоритет ключа: sessionStorage (из QR) → поле ввода
-  const keyFromSession = sessionStorage.getItem('encKey') || '';
-  encKey    = keyFromSession || keyInput;
+  // Приоритет ключа: из QR (временный) → поле ввода
+  const keyFromQr = sessionStorage.getItem('encKey_from_qr') || '';
+  sessionStorage.removeItem('encKey_from_qr'); // одноразовый — удаляем
+  encKey    = keyFromQr || keyInput;
   guardName = guardInput;
 
-  // Сохраняем имя коменданта
+  // Сохраняем только имя коменданта (ключ не сохраняем намеренно)
   sessionStorage.setItem('guardName', guardName);
-  sessionStorage.setItem('encKey', encKey);
 
   showLoginError('');
   document.getElementById('login-btn-text') && (document.querySelector('.login-btn').textContent = '⏳ Загрузка...');
@@ -847,9 +851,13 @@ async function confirmGuest() {
 
 async function sendConfirm(id, checkEnc, logData) {
   try {
-    // 1. Отправляем confirm
+    // Apps Script требует POST без preflight — используем text/plain
     const body = JSON.stringify({ action: 'confirm', id, check_enc: checkEnc });
-    const r = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    const r = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body
+    });
     const d = await r.json();
 
     if (d.alreadyChecked) {
@@ -894,7 +902,11 @@ async function sendLog(logData) {
   try {
     const data_enc = encodeField(JSON.stringify(logData), encKey);
     const body = JSON.stringify({ action: 'log', timestamp: Date.now().toString(), data_enc });
-    await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+    await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body
+    });
   } catch(e) { /* не критично */ }
 }
 
@@ -935,7 +947,7 @@ async function uncheckGuest() {
   if (isOnline) {
     try {
       const body = JSON.stringify({ action: 'uncheck', id });
-      await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+      await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body });
       await sendLog(logData);
     } catch(e) {
       offlineQueue.push({ type: 'uncheck', id, logData });
@@ -965,7 +977,7 @@ async function processOfflineQueue() {
         await sendConfirm(item.id, item.check_enc, item.logData);
       } else if (item.type === 'uncheck') {
         const body = JSON.stringify({ action: 'uncheck', id: item.id });
-        await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+        await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body });
         await sendLog(item.logData);
       }
     } catch(e) {
@@ -1223,8 +1235,34 @@ document.getElementById('manual-num').addEventListener('keydown', e => { if (e.k
 document.getElementById('search-name').addEventListener('keydown', e => {
   if (e.key === 'Enter') { clearTimeout(searchDebounce); const q = document.getElementById('search-name').value.trim(); if (q.length >= 2) doLocalSearch(q); }
 });
-document.getElementById('login-guard').addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('login-key').focus(); });
+document.getElementById('login-guard').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 document.getElementById('login-key').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+// Автозаполнение формы входа
+(function() {
+  const savedGuard = sessionStorage.getItem('guardName') || '';
+  const keyFromQr  = sessionStorage.getItem('encKey_from_qr') || '';
+
+  if (savedGuard) {
+    document.getElementById('login-guard').value = savedGuard;
+  }
+
+  if (keyFromQr) {
+    // Ключ пришёл из QR — скрываем поле ключа, комендант его не видит
+    document.getElementById('key-field-wrap').style.display = 'none';
+    document.getElementById('login-key').value = keyFromQr;
+    // Если имя уже известно — входим полностью автоматически
+    if (savedGuard) {
+      doLogin();
+    } else {
+      // Иначе подсказываем коменданту что нужно сделать
+      const hint = document.createElement('div');
+      hint.style.cssText = 'text-align:center;font-size:13px;color:var(--accent2);margin-top:8px;';
+      hint.textContent = '🔑 Ключ получен из QR-кода';
+      document.getElementById('key-field-wrap').insertAdjacentElement('afterend', hint);
+    }
+  }
+})();
 </script>
 </body>
 </html>
