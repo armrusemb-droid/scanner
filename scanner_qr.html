@@ -477,6 +477,156 @@ let clientIP = '';
 let clientUA = '';
 
 // ════════════════════════════════════════════════════════
+//  IndexedDB — локальное хранилище базы и офлайн-очереди
+//  База хранится 7 дней, при несовпадении версии — удаляется
+// ════════════════════════════════════════════════════════
+
+const DB_NAME    = 'GuestManagerDB';
+const DB_VERSION = 1;
+const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 дней
+
+let _db = null;
+
+function openDB() {
+  if (_db) return Promise.resolve(_db);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      // Хранилище для метаданных: версия, дата сохранения
+      if (!db.objectStoreNames.contains('meta'))
+        db.createObjectStore('meta');
+      // Хранилище для гостей: ключ = id гостя
+      if (!db.objectStoreNames.contains('guests'))
+        db.createObjectStore('guests', { keyPath: 'id' });
+      // Хранилище для офлайн-очереди
+      if (!db.objectStoreNames.contains('queue'))
+        db.createObjectStore('queue', { autoIncrement: true });
+    };
+    req.onsuccess = e => { _db = e.target.result; resolve(_db); };
+    req.onerror   = () => reject(req.error);
+  });
+}
+
+function dbGet(store, key) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  }));
+}
+
+function dbPut(store, value, key) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    const req = key !== undefined
+      ? tx.objectStore(store).put(value, key)
+      : tx.objectStore(store).put(value);
+    req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+  }));
+}
+
+function dbDelete(store, key) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).delete(key);
+    req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+  }));
+}
+
+function dbClear(store) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).clear();
+    req.onsuccess = () => resolve();
+    req.onerror   = () => reject(req.error);
+  }));
+}
+
+function dbGetAll(store) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).getAll();
+    req.onsuccess = () => resolve(req.result);
+    req.onerror   = () => reject(req.error);
+  }));
+}
+
+function dbGetAllWithKeys(store) {
+  return openDB().then(db => new Promise((resolve, reject) => {
+    const tx = db.transaction(store, 'readonly');
+    const result = [];
+    tx.objectStore(store).openCursor().onsuccess = e => {
+      const cursor = e.target.result;
+      if (cursor) { result.push({ key: cursor.key, value: cursor.value }); cursor.continue(); }
+      else resolve(result);
+    };
+    tx.onerror = () => reject(tx.error);
+  }));
+}
+
+// Сохраняем всю базу гостей в IndexedDB (сырые зашифрованные записи)
+async function saveGuestsToDB(guests, version) {
+  try {
+    await dbClear('guests');
+    const db = await openDB();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction('guests', 'readwrite');
+      const store = tx.objectStore('guests');
+      guests.forEach(g => store.put(g));
+      tx.oncomplete = resolve;
+      tx.onerror    = () => reject(tx.error);
+    });
+    await dbPut('meta', { version, savedAt: Date.now() }, 'cacheInfo');
+  } catch(e) { /* не критично — работаем без кеша */ }
+}
+
+// Проверяем есть ли актуальный локальный кеш
+async function getLocalCache() {
+  try {
+    const info = await dbGet('meta', 'cacheInfo');
+    if (!info) return null;
+    // Проверяем возраст
+    if (Date.now() - info.savedAt > MAX_AGE_MS) {
+      await dbClear('guests');
+      await dbDelete('meta', 'cacheInfo');
+      return null; // устарел — удаляем
+    }
+    return info; // { version, savedAt }
+  } catch(e) { return null; }
+}
+
+// Загружаем офлайн-очередь из IndexedDB в память
+async function loadQueueFromDB() {
+  try {
+    const items = await dbGetAllWithKeys('queue');
+    offlineQueue = items.map(i => ({ ...i.value, _dbKey: i.key }));
+  } catch(e) { offlineQueue = []; }
+}
+
+// Сохраняем один элемент очереди в IndexedDB, возвращаем его dbKey
+async function saveQueueItemToDB(item) {
+  try {
+    const db = await openDB();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction('queue', 'readwrite');
+      const req = tx.objectStore('queue').add(item);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror   = () => reject(req.error);
+    });
+  } catch(e) { return null; }
+}
+
+// Удаляем отправленный элемент из IndexedDB
+async function removeQueueItemFromDB(dbKey) {
+  if (dbKey == null) return;
+  try { await dbDelete('queue', dbKey); } catch(e) {}
+}
+
+// ════════════════════════════════════════════════════════
 //  ШИФРОВАНИЕ — XOR идентичный VBA Module3
 // ════════════════════════════════════════════════════════
 
@@ -556,13 +706,11 @@ async function doLogin() {
     return;
   }
 
-  // Приоритет ключа: из QR (временный) → поле ввода
   const keyFromQr = sessionStorage.getItem('encKey_from_qr') || '';
-  sessionStorage.removeItem('encKey_from_qr'); // одноразовый — удаляем
+  sessionStorage.removeItem('encKey_from_qr');
   encKey    = keyFromQr || keyInput;
   guardName = guardInput;
 
-  // Сохраняем только имя коменданта (ключ не сохраняем намеренно)
   sessionStorage.setItem('guardName', guardName);
 
   showLoginError('');
@@ -581,10 +729,39 @@ async function doLogin() {
   try {
     setLoadStatus('Подключение к серверу...');
     await loadConfig();
+
+    // Восстанавливаем офлайн-очередь из IndexedDB
+    await loadQueueFromDB();
+
+    // Проверяем локальный кеш
+    const cacheInfo = await getLocalCache();
+
+    if (cacheInfo) {
+      // Есть локальная копия — пробуем загрузить из неё
+      setLoadStatus('Загрузка из локальной базы...');
+      const localGuests = await dbGetAll('guests');
+
+      if (localGuests.length > 0) {
+        // Проверяем ключ на первом госте из кеша
+        const keyOk = checkEncKey(localGuests[0]);
+        if (!keyOk) throw new Error('Неверный ключ шифрования. Проверьте ключ и войдите снова.');
+
+        await decodeGuestsInChunks(localGuests);
+        clearLoadStatus();
+        startApp();
+
+        // Проверяем версию в фоне — не блокируем вход
+        checkVersionAfterLogin(cacheInfo.version);
+        return;
+      }
+    }
+
+    // Локального кеша нет — загружаем с сервера
     setLoadStatus('Загрузка базы гостей...');
     await loadGuests();
     clearLoadStatus();
     startApp();
+
   } catch(e) {
     btn.disabled = false;
     btn.textContent = 'Войти и загрузить данные';
@@ -611,6 +788,33 @@ async function loadConfig() {
   if (!API_URL) throw new Error('api_url не найден в config.json');
 }
 
+// Проверяет что ключ подходит к первой записи
+function checkEncKey(firstGuest) {
+  try {
+    const testJson = decodeField(firstGuest.guest_enc, encKey);
+    const testData = JSON.parse(testJson);
+    return typeof testData === 'object' && testData !== null &&
+           typeof testData.name === 'string' && testData.name.length > 0;
+  } catch(e) { return false; }
+}
+
+// Фоновая проверка версии сразу после входа из кеша
+async function checkVersionAfterLogin(localVersion) {
+  try {
+    const serverVersion = await getVersion();
+    if (!serverVersion) return; // нет связи — работаем с кешем
+    if (String(serverVersion) !== String(localVersion)) {
+      // Версия изменилась — удаляем старый кеш и перезагружаем базу
+      updateSyncBadge('syncing', '🔄 База обновлена на сервере, загружаем...');
+      await dbClear('guests');
+      await dbDelete('meta', 'cacheInfo');
+      await loadGuests();
+      updateSyncBadge('synced', `✅ База обновлена: ${guestCache.size} гостей`);
+    }
+    // Версии совпадают — кеш актуален, ничего не делаем
+  } catch(e) { /* нет связи — молча продолжаем */ }
+}
+
 async function loadGuests() {
   const r = await fetch(API_URL + '?action=getGuests');
   if (!r.ok) throw new Error('Ошибка сервера: ' + r.status);
@@ -619,7 +823,6 @@ async function loadGuests() {
 
   const guests = data.guests || [];
 
-  // Обновляем спиннер с реальным количеством
   const loadEl = document.getElementById('load-status');
   if (loadEl && guests.length > 0) {
     loadEl.innerHTML = `<span class="load-spinner"></span>Расшифровка ${guests.length} гостей...`;
@@ -627,24 +830,16 @@ async function loadGuests() {
 
   if (guests.length === 0) { guestCache.clear(); return; }
 
-  // Проверяем ключ на первом госте
-  let keyOk = false;
-  try {
-    const raw = guests[0].guest_enc;
-    const testJson = decodeField(raw, encKey);
-    const testData = JSON.parse(testJson);
-    if (typeof testData === 'object' && testData !== null &&
-        typeof testData.name === 'string' && testData.name.length > 0) {
-      keyOk = true;
-    }
-  } catch(e) {
-    keyOk = false;
-  }
-  if (!keyOk) {
+  // Проверяем ключ
+  if (!checkEncKey(guests[0])) {
     throw new Error('Неверный ключ шифрования. Проверьте ключ и войдите снова.');
   }
 
-  // Ключ верный — загружаем всех порциями, чтобы не заморозить UI при 2000+ гостях
+  // Сохраняем сырые зашифрованные данные в IndexedDB (до расшифровки)
+  const serverVersion = await getVersion();
+  saveGuestsToDB(guests, serverVersion || Date.now()); // не ждём — фон
+
+  // Расшифровываем порциями
   guestCache.clear();
   await decodeGuestsInChunks(guests);
 }
@@ -877,7 +1072,9 @@ async function confirmGuest() {
       setStatus('warn', '📵 Сохранено локально — отправим при связи');
     }
   } else {
-    offlineQueue.push({ type: 'confirm', id: guest.id, check_enc: checkEnc, logData, logId });
+    const item = { type: 'confirm', id: guest.id, check_enc: checkEnc, logData, logId };
+    const dbKey = await saveQueueItemToDB(item);
+    offlineQueue.push({ ...item, _dbKey: dbKey });
     updateLogSync(logId, 'local');
     updateSyncBadge('queue', `📵 Офлайн: ${offlineQueue.length} в очереди`);
   }
@@ -988,11 +1185,15 @@ async function uncheckGuest() {
       updateLogSync(uncheckLogId, 'synced');
     } catch(e) {
       updateLogSync(uncheckLogId, 'local');
-      offlineQueue.push({ type: 'uncheck', id, logData });
+      const item = { type: 'uncheck', id, logData, logId: uncheckLogId };
+      const dbKey = await saveQueueItemToDB(item);
+      offlineQueue.push({ ...item, _dbKey: dbKey });
     }
   } else {
     updateLogSync(uncheckLogId, 'local');
-    offlineQueue.push({ type: 'uncheck', id, logData, logId: uncheckLogId });
+    const item = { type: 'uncheck', id, logData, logId: uncheckLogId };
+    const dbKey = await saveQueueItemToDB(item);
+    offlineQueue.push({ ...item, _dbKey: dbKey });
     updateSyncBadge('queue', `📵 Офлайн: ${offlineQueue.length} в очереди`);
   }
 
@@ -1014,7 +1215,6 @@ async function processOfflineQueue() {
     try {
       if (item.type === 'confirm') {
         await sendConfirm(item.id, item.check_enc, item.logData);
-        // sendConfirm возвращает true при успехе — бейдж обновляем здесь
         if (item.logId) updateLogSync(item.logId, 'synced');
       } else if (item.type === 'uncheck') {
         const body = JSON.stringify({ action: 'uncheck', id: item.id });
@@ -1022,8 +1222,10 @@ async function processOfflineQueue() {
         await sendLog(item.logData);
         if (item.logId) updateLogSync(item.logId, 'synced');
       }
+      // Успешно отправлено — удаляем из IndexedDB
+      await removeQueueItemFromDB(item._dbKey);
     } catch(e) {
-      offlineQueue.push(item); // вернём обратно если не отправилось
+      offlineQueue.push(item); // не отправилось — оставляем в памяти и БД
     }
   }
 
