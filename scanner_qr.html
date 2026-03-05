@@ -594,37 +594,37 @@ async function loadGuests() {
   const data = await r.json();
   if (!data.success) throw new Error(data.message || 'Ошибка получения гостей');
 
+  const guests = data.guests || [];
+  if (guests.length === 0) { guestCache.clear(); return; }
+
+  // Проверяем ключ на первом госте
+  try {
+    const testJson = decodeField(guests[0].guest_enc, encKey);
+    const testData = JSON.parse(testJson);
+    if (typeof testData !== 'object' || testData === null ||
+        typeof testData.name !== 'string') {
+      throw new Error('wrong_key');
+    }
+  } catch(e) {
+    throw new Error('Неверный ключ шифрования. Проверьте ключ и войдите снова.');
+  }
+
+  // Ключ верный — загружаем всех
   guestCache.clear();
-  (data.guests || []).forEach(g => {
+  guests.forEach(g => {
     try {
       const gJson = decodeField(g.guest_enc, encKey);
       const gData = JSON.parse(gJson);
-
-      // Валидируем ключ: если appeal2 не строка — скорее всего ключ неверный
-      if (typeof gData.appeal2 !== 'string' && typeof gData.name !== 'string') {
-        throw new Error('invalid_key');
-      }
-
       guestCache.set(g.id, {
-        id:       g.id,
-        appeal2:  gData.appeal2  || '',
-        name:     gData.name     || '',
-        org:      gData.org      || '',
-        position: gData.position || '',
-        check_enc: g.check_enc   || ''
+        id:        g.id,
+        appeal2:   gData.appeal2  || '',
+        name:      gData.name     || '',
+        org:       gData.org      || '',
+        position:  gData.position || '',
+        check_enc: g.check_enc    || ''
       });
-    } catch(e) {
-      if (e.message === 'invalid_key') throw e;
-      // Если не удалось разобрать отдельную запись — пропускаем
-    }
+    } catch(e) { /* повреждённую запись пропускаем */ }
   });
-}
-
-async function getVersion() {
-  const r = await fetch(API_URL + '?action=getVersion');
-  if (!r.ok) return null;
-  const d = await r.json();
-  return d.success ? d.version : null;
 }
 
 // ════════════════════════════════════════════════════════
