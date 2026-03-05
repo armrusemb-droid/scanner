@@ -644,22 +644,39 @@ async function loadGuests() {
     throw new Error('Неверный ключ шифрования. Проверьте ключ и войдите снова.');
   }
 
-  // Ключ верный — загружаем всех
+  // Ключ верный — загружаем всех порциями, чтобы не заморозить UI при 2000+ гостях
   guestCache.clear();
-  guests.forEach(g => {
-    try {
-      const gJson = decodeField(g.guest_enc, encKey);
-      const gData = JSON.parse(gJson);
-      guestCache.set(g.id, {
-        id:        g.id,
-        appeal2:   gData.appeal2  || '',
-        name:      gData.name     || '',
-        org:       gData.org      || '',
-        position:  gData.position || '',
-        check_enc: g.check_enc    || ''
-      });
-    } catch(e) { /* повреждённую запись пропускаем */ }
-  });
+  await decodeGuestsInChunks(guests);
+}
+
+async function decodeGuestsInChunks(guests) {
+  const CHUNK = 100; // гостей за один тик
+  const loadEl = document.getElementById('load-status');
+
+  for (let i = 0; i < guests.length; i += CHUNK) {
+    const slice = guests.slice(i, i + CHUNK);
+    for (const g of slice) {
+      try {
+        const gJson = decodeField(g.guest_enc, encKey);
+        const gData = JSON.parse(gJson);
+        guestCache.set(g.id, {
+          id:        g.id,
+          appeal2:   gData.appeal2  || '',
+          name:      gData.name     || '',
+          org:       gData.org      || '',
+          position:  gData.position || '',
+          check_enc: g.check_enc    || ''
+        });
+      } catch(e) { /* повреждённую запись пропускаем */ }
+    }
+    // Обновляем спиннер с прогрессом и отдаём управление браузеру
+    if (loadEl) {
+      const done = Math.min(i + CHUNK, guests.length);
+      loadEl.innerHTML = `<span class="load-spinner"></span>Расшифровка ${done} / ${guests.length} гостей...`;
+    }
+    // Отдаём браузеру один кадр — интерфейс не замерзает
+    await new Promise(r => setTimeout(r, 0));
+  }
 }
 
 // ════════════════════════════════════════════════════════
@@ -975,7 +992,7 @@ async function uncheckGuest() {
     }
   } else {
     updateLogSync(uncheckLogId, 'local');
-    offlineQueue.push({ type: 'uncheck', id, logData });
+    offlineQueue.push({ type: 'uncheck', id, logData, logId: uncheckLogId });
     updateSyncBadge('queue', `📵 Офлайн: ${offlineQueue.length} в очереди`);
   }
 
@@ -997,10 +1014,13 @@ async function processOfflineQueue() {
     try {
       if (item.type === 'confirm') {
         await sendConfirm(item.id, item.check_enc, item.logData);
+        // sendConfirm возвращает true при успехе — бейдж обновляем здесь
+        if (item.logId) updateLogSync(item.logId, 'synced');
       } else if (item.type === 'uncheck') {
         const body = JSON.stringify({ action: 'uncheck', id: item.id });
         await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body });
         await sendLog(item.logData);
+        if (item.logId) updateLogSync(item.logId, 'synced');
       }
     } catch(e) {
       offlineQueue.push(item); // вернём обратно если не отправилось
