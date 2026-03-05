@@ -598,14 +598,19 @@ async function loadGuests() {
   if (guests.length === 0) { guestCache.clear(); return; }
 
   // Проверяем ключ на первом госте
+  let keyOk = false;
   try {
     const testJson = decodeField(guests[0].guest_enc, encKey);
     const testData = JSON.parse(testJson);
-    if (typeof testData !== 'object' || testData === null ||
-        typeof testData.name !== 'string') {
-      throw new Error('wrong_key');
+    if (typeof testData === 'object' && testData !== null &&
+        typeof testData.name === 'string' && testData.name.length > 0) {
+      keyOk = true;
     }
   } catch(e) {
+    // JSON.parse упал — ключ точно неверный
+    keyOk = false;
+  }
+  if (!keyOk) {
     throw new Error('Неверный ключ шифрования. Проверьте ключ и войдите снова.');
   }
 
