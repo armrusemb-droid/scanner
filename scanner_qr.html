@@ -1257,8 +1257,13 @@ async function processOfflineQueue() {
       `🔄 Синхронизация ${done + 1} из ${total}: ${guestName}`
     );
 
-    // Подсвечиваем значком отправки конкретную запись в логе
-    if (item.logId) updateLogSync(item.logId, 'syncing');
+    // Если запись в логе не существует (перезапуск после офлайна) — создаём её
+    const badgeExists = item.logId && document.getElementById('badge-' + item.logId);
+    if (!badgeExists) {
+      const guest = guestCache.get(item.id) || { name: guestName, org: '' };
+      const logTime = item.logData && item.logData.time ? item.logData.time : nowTime();
+      item.logId = addLog(item.type === 'uncheck' ? 'uncheck' : 'ok', guest, logTime);
+    }
 
     try {
       if (item.type === 'confirm') {
