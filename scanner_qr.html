@@ -628,35 +628,36 @@ async function removeQueueItemFromDB(dbKey) {
 }
 
 // ════════════════════════════════════════════════════════
-//  ШИФРОВАНИЕ — AES-256-GCM через Web Crypto API
-//  Ключ: PBKDF2-SHA256, 100000 итераций
-//  Формат: aes:<base64(IV[12] + ciphertext + tag[16])>
-//  Формат: aes:<base64(IV[12] + ciphertext + tag[16])>
+//  ШИФРОВАНИЕ — AES-256-CBC + HMAC-SHA256
+//  Совместимо с VBA (PowerShell): IV=16 байт, HMAC=32 байта
+//  Ключ: PBKDF2-SHA1, 100000 итераций
+//  Формат: aes:<base64(IV[16] + ciphertext + HMAC[32])>
 // ════════════════════════════════════════════════════════
 
 const AES_SALT = 'GuestManagerV2_AES_SALT_2026';
 const AES_ITER = 100000;
 
-// Кеш производного ключа — не пересчитываем PBKDF2 каждый раз
-let _cachedCryptoKey = null;
-let _cachedPassword  = null;
+let _cachedEncKey  = null;  // CryptoKey для шифрования/дешифровки
+let _cachedMacKey  = null;  // CryptoKey для HMAC
+let _cachedPassword = null;
 
-async function getCryptoKey(password) {
-  if (_cachedCryptoKey && _cachedPassword === password) return _cachedCryptoKey;
+async function getCryptoKeys(password) {
+  if (_cachedEncKey && _cachedPassword === password) return { encKey: _cachedEncKey, macKey: _cachedMacKey };
   const pwdBytes  = new TextEncoder().encode(password);
   const saltBytes = new TextEncoder().encode(AES_SALT);
-  const baseKey = await crypto.subtle.importKey(
-    'raw', pwdBytes, 'PBKDF2', false, ['deriveKey']
+  // PBKDF2-SHA1 (как в .NET Rfc2898DeriveBytes по умолчанию)
+  const baseKey = await crypto.subtle.importKey('raw', pwdBytes, 'PBKDF2', false, ['deriveBits']);
+  const derived = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: saltBytes, iterations: AES_ITER, hash: 'SHA-1' },
+    baseKey, 512  // 64 байта: 32 для AES + 32 для HMAC
   );
-  _cachedCryptoKey = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: saltBytes, iterations: AES_ITER, hash: 'SHA-256' },
-    baseKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
-  );
+  const keyBytes = new Uint8Array(derived);
+  _cachedEncKey = await crypto.subtle.importKey('raw', keyBytes.slice(0, 32),
+    { name: 'AES-CBC' }, false, ['encrypt', 'decrypt']);
+  _cachedMacKey = await crypto.subtle.importKey('raw', keyBytes.slice(0, 32),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']);
   _cachedPassword = password;
-  return _cachedCryptoKey;
+  return { encKey: _cachedEncKey, macKey: _cachedMacKey };
 }
 
 function base64Encode(bytes) {
@@ -677,21 +678,21 @@ async function encodeField(json, key) {
     return 'raw:' + base64Encode(bytes);
   }
   try {
-    const cryptoKey = await getCryptoKey(key);
-    const iv        = crypto.getRandomValues(new Uint8Array(12));
+    const { encKey, macKey } = await getCryptoKeys(key);
+    const iv        = crypto.getRandomValues(new Uint8Array(16));
     const plaintext = new TextEncoder().encode(json);
-    const cipher    = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
-      cryptoKey,
-      plaintext
-    );
-    // AES-GCM возвращает ciphertext + tag[16] вместе
-    const result = new Uint8Array(12 + cipher.byteLength);
-    result.set(iv, 0);
-    result.set(new Uint8Array(cipher), 12);
+    const cipherBuf = await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, encKey, plaintext);
+    const cipher    = new Uint8Array(cipherBuf);
+    // HMAC по IV + ciphertext
+    const authData  = new Uint8Array(16 + cipher.length);
+    authData.set(iv, 0); authData.set(cipher, 16);
+    const tagBuf    = await crypto.subtle.sign({ name: 'HMAC' }, macKey, authData);
+    const tag       = new Uint8Array(tagBuf);
+    // Результат: IV(16) + ciphertext + HMAC(32)
+    const result = new Uint8Array(16 + cipher.length + 32);
+    result.set(iv, 0); result.set(cipher, 16); result.set(tag, 16 + cipher.length);
     return 'aes:' + base64Encode(result);
   } catch(e) {
-    // Fallback: raw если crypto.subtle недоступен
     const bytes = new TextEncoder().encode(json);
     return 'raw:' + base64Encode(bytes);
   }
@@ -704,16 +705,18 @@ async function decodeField(encoded, key) {
   if (prefix === 'aes:') {
     if (!key) return '[зашифровано — ключ не указан]';
     try {
-      const cryptoKey = await getCryptoKey(key);
-      const raw = base64Decode(body);
-      const iv  = raw.slice(0, 12);
-      const ct  = raw.slice(12);
-      const plain = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
-        cryptoKey,
-        ct
-      );
-      return new TextDecoder().decode(plain);
+      const { encKey, macKey } = await getCryptoKeys(key);
+      const raw    = base64Decode(body);
+      const iv     = raw.slice(0, 16);
+      const tag    = raw.slice(raw.length - 32);
+      const cipher = raw.slice(16, raw.length - 32);
+      // Проверяем HMAC
+      const authData = new Uint8Array(16 + cipher.length);
+      authData.set(iv, 0); authData.set(cipher, 16);
+      const valid = await crypto.subtle.verify({ name: 'HMAC' }, macKey, tag, authData);
+      if (!valid) return '';
+      const plainBuf = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, encKey, cipher);
+      return new TextDecoder().decode(plainBuf);
     } catch(e) { return ''; }
   }
   if (prefix === 'raw:') {
@@ -722,129 +725,7 @@ async function decodeField(encoded, key) {
   return encoded;
 }
 
-// ════════════════════════════════════════════════════════
-//  ЭКРАН ВХОДА
-// ════════════════════════════════════════════════════════
 
-// Извлекаем ключ из URL (QR с ключом) — сохраняем в модульную переменную
-// Не полагаемся на sessionStorage — он может быть заблокирован на мобильных
-(function() {
-  const params = new URLSearchParams(window.location.search);
-  const keyFromUrl = params.get('key');
-  if (keyFromUrl) {
-    _qrKey = keyFromUrl;  // модульная переменная — надёжно
-    try { sessionStorage.setItem('encKey_from_qr', keyFromUrl); } catch(e) {}
-    history.replaceState(null, '', window.location.pathname);
-  }
-})();
-
-async function doLogin() {
-  const guardInput = document.getElementById('login-guard').value.trim();
-  // Читаем ключ из поля — оно уже заполнено либо пользователем, либо из QR
-  const keyInput   = document.getElementById('login-key').value.trim();
-
-  // Также проверяем sessionStorage — на случай если doLogin вызван
-  // программно (автовход) до того как поле успело заполниться
-  // Приоритет: модульная переменная (из QR) → sessionStorage → поле ввода
-  const keyFromQr = _qrKey
-    || (function(){ try { return sessionStorage.getItem('encKey_from_qr') || ''; } catch(e){ return ''; } })()
-    || keyInput;
-
-  // FIX: сохраняем ключ ДО сброса _qrKey — иначе при ошибке входа ключ теряется
-  encKey = keyFromQr;
-
-  _qrKey = ''; // одноразовый — сбрасываем
-  try { sessionStorage.removeItem('encKey_from_qr'); } catch(e) {}
-
-  if (!guardInput) {
-    showLoginError('Введите ваше ФИО');
-    document.getElementById('login-guard').style.borderColor = 'var(--red)';
-    return;
-  }
-  guardName = guardInput;
-
-  // Сбрасываем кеш производного ключа при каждом входе
-  _cachedCryptoKey = null;
-  _cachedPassword  = null;
-
-  sessionStorage.setItem('guardName', guardName);
-
-  showLoginError('');
-  const btn = document.querySelector('.login-btn');
-  btn.disabled = true;
-  btn.textContent = 'Загружаем...';
-
-  function setLoadStatus(text) {
-    document.getElementById('load-status').innerHTML =
-      `<span class="load-spinner"></span>${text}`;
-  }
-  function clearLoadStatus() {
-    document.getElementById('load-status').innerHTML = '';
-  }
-
-  try {
-    setLoadStatus('Подключение к серверу...');
-    await loadConfig();
-
-    // Восстанавливаем офлайн-очередь из IndexedDB
-    await loadQueueFromDB();
-
-    // Проверяем локальный кеш
-    const cacheInfo = await getLocalCache();
-
-    if (cacheInfo) {
-      // Есть локальная копия — пробуем загрузить из неё
-      setLoadStatus('Загрузка из локальной базы...');
-      const localGuests = await dbGetAll('guests');
-
-      if (localGuests.length > 0) {
-        // Проверяем ключ на первом госте из кеша
-        const keyOk = await checkEncKey(localGuests[0]);
-        if (!keyOk) throw new Error('Неверный ключ шифрования. Проверьте ключ и войдите снова.');
-
-        await decodeGuestsInChunks(localGuests);
-        clearLoadStatus();
-        startApp();
-
-        // Проверяем версию в фоне — не блокируем вход
-        checkVersionAfterLogin(cacheInfo.version);
-        return;
-      }
-    }
-
-    // Локального кеша нет — загружаем с сервера
-    setLoadStatus('Загрузка базы гостей...');
-    await loadGuests();
-    clearLoadStatus();
-    startApp();
-
-  } catch(e) {
-    btn.disabled = false;
-    btn.textContent = 'Войти и загрузить данные';
-    clearLoadStatus();
-    showLoginError('Ошибка загрузки: ' + e.message);
-  }
-}
-
-function showLoginError(msg) {
-  const el = document.getElementById('login-error');
-  el.textContent = msg;
-  el.style.display = msg ? 'block' : 'none';
-}
-
-// ════════════════════════════════════════════════════════
-//  ЗАГРУЗКА CONFIG И ГОСТЕЙ
-// ════════════════════════════════════════════════════════
-
-async function loadConfig() {
-  const r = await fetch(CONFIG_URL + '?t=' + Date.now());
-  if (!r.ok) throw new Error('Не удалось загрузить config.json');
-  const cfg = await r.json();
-  API_URL = cfg.api_url || '';
-  if (!API_URL) throw new Error('api_url не найден в config.json');
-}
-
-// Проверяет что ключ подходит к первой записи
 async function checkEncKey(firstGuest) {
   try {
     const testJson = await decodeField(firstGuest.guest_enc, encKey);
