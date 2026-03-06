@@ -725,24 +725,25 @@ async function decodeField(encoded, key) {
 //  ЭКРАН ВХОДА
 // ════════════════════════════════════════════════════════
 
-// Проверяем ?key= в URL (QR с ключом) — ключ НЕ сохраняем в sessionStorage,
-// он живёт только в памяти текущего сеанса. При обновлении страницы нужен повторный вход.
+// Извлекаем ключ из URL (QR с ключом) — до инициализации формы
 (function() {
-  // Сбрасываем ключ при каждой загрузке страницы
-  sessionStorage.removeItem('encKey');
   const params = new URLSearchParams(window.location.search);
   const keyFromUrl = params.get('key');
   if (keyFromUrl) {
-    // Временно держим в sessionStorage только для передачи в doLogin()
     sessionStorage.setItem('encKey_from_qr', keyFromUrl);
-    // Убираем ключ из адресной строки
     history.replaceState(null, '', window.location.pathname);
   }
 })();
 
 async function doLogin() {
   const guardInput = document.getElementById('login-guard').value.trim();
+  // Читаем ключ из поля — оно уже заполнено либо пользователем, либо из QR
   const keyInput   = document.getElementById('login-key').value.trim();
+
+  // Также проверяем sessionStorage — на случай если doLogin вызван
+  // программно (автовход) до того как поле успело заполниться
+  const keyFromQr = sessionStorage.getItem('encKey_from_qr') || '';
+  if (keyFromQr) sessionStorage.removeItem('encKey_from_qr');
 
   if (!guardInput) {
     showLoginError('Введите ваше ФИО');
@@ -750,8 +751,6 @@ async function doLogin() {
     return;
   }
 
-  const keyFromQr = sessionStorage.getItem('encKey_from_qr') || '';
-  sessionStorage.removeItem('encKey_from_qr');
   encKey    = keyFromQr || keyInput;
   guardName = guardInput;
 
@@ -1546,28 +1545,31 @@ document.getElementById('search-name').addEventListener('keydown', e => {
 document.getElementById('login-guard').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 document.getElementById('login-key').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
 
-// Автозаполнение формы входа
-(function() {
+// Инициализация формы входа — выполняется после загрузки всего DOM и скриптов
+(function initLoginForm() {
   const savedGuard = sessionStorage.getItem('guardName') || '';
   const keyFromQr  = sessionStorage.getItem('encKey_from_qr') || '';
 
+  // Восстанавливаем имя коменданта
   if (savedGuard) {
     document.getElementById('login-guard').value = savedGuard;
   }
 
   if (keyFromQr) {
-    // Ключ пришёл из QR — скрываем поле ключа, комендант его не видит
+    // Ключ пришёл из QR — скрываем поле ключа
     document.getElementById('key-field-wrap').style.display = 'none';
     document.getElementById('login-key').value = keyFromQr;
-    // Если имя уже известно — входим полностью автоматически
+
     if (savedGuard) {
+      // Имя известно — входим автоматически
       doLogin();
     } else {
-      // Иначе подсказываем коменданту что нужно сделать
+      // Показываем подсказку и фокусируем поле ФИО
       const hint = document.createElement('div');
       hint.style.cssText = 'text-align:center;font-size:13px;color:var(--accent2);margin-top:8px;';
       hint.textContent = '🔑 Ключ получен из QR-кода';
       document.getElementById('key-field-wrap').insertAdjacentElement('afterend', hint);
+      document.getElementById('login-guard').focus();
     }
   }
 })();
