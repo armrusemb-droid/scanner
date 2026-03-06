@@ -1244,33 +1244,45 @@ async function uncheckGuest() {
 
 async function processOfflineQueue() {
   if (!isOnline || offlineQueue.length === 0) return;
-  updateSyncBadge('syncing', `🔄 Отправка ${offlineQueue.length} отложенных...`);
 
+  const total = offlineQueue.length;
   const queue = [...offlineQueue];
   offlineQueue = [];
+  let done = 0;
 
   for (const item of queue) {
+    // Показываем какой именно элемент сейчас отправляется
+    const guestName = item.logData && item.logData.name ? item.logData.name : item.id;
+    updateSyncBadge('syncing',
+      `🔄 Синхронизация ${done + 1} из ${total}: ${guestName}`
+    );
+
+    // Подсвечиваем значком отправки конкретную запись в логе
+    if (item.logId) updateLogSync(item.logId, 'syncing');
+
     try {
       if (item.type === 'confirm') {
         await sendConfirm(item.id, item.check_enc, item.logData);
-        if (item.logId) updateLogSync(item.logId, 'synced');
       } else if (item.type === 'uncheck') {
         const body = JSON.stringify({ action: 'uncheck', id: item.id });
         await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body });
         await sendLog(item.logData);
-        if (item.logId) updateLogSync(item.logId, 'synced');
       }
-      // Успешно отправлено — удаляем из IndexedDB
+      // Успешно — помечаем в логе и удаляем из IndexedDB
+      if (item.logId) updateLogSync(item.logId, 'synced');
       await removeQueueItemFromDB(item._dbKey);
+      done++;
     } catch(e) {
-      offlineQueue.push(item); // не отправилось — оставляем в памяти и БД
+      // Не отправилось — возвращаем в очередь, сбрасываем значок
+      if (item.logId) updateLogSync(item.logId, 'local');
+      offlineQueue.push(item);
     }
   }
 
   if (offlineQueue.length === 0) {
-    updateSyncBadge('synced', '✅ Все данные синхронизированы');
+    updateSyncBadge('synced', `✅ Синхронизировано: ${done} из ${total}`);
   } else {
-    updateSyncBadge('queue', `⚠️ Не отправлено: ${offlineQueue.length}`);
+    updateSyncBadge('queue', `⚠️ Отправлено ${done} из ${total}, не удалось: ${offlineQueue.length}`);
   }
 }
 
