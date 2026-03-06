@@ -626,12 +626,6 @@ async function removeQueueItemFromDB(dbKey) {
   try { await dbDelete('queue', dbKey); } catch(e) {}
 }
 
-// ════════════════════════════════════════════════════════
-//  ШИФРОВАНИЕ — AES-256-GCM через Web Crypto API
-//  Ключ: PBKDF2-SHA256, 100000 итераций
-//  Формат: aes:<base64(IV[12] + ciphertext + tag[16])>
-//  Формат: aes:<base64(IV[12] + ciphertext + tag[16])>
-// ════════════════════════════════════════════════════════
 
 const AES_SALT = 'GuestManagerV2_AES_SALT_2026';
 const AES_ITER = 100000;
@@ -645,16 +639,20 @@ async function getCryptoKey(password) {
   const pwdBytes  = new TextEncoder().encode(password);
   const saltBytes = new TextEncoder().encode(AES_SALT);
   const baseKey = await crypto.subtle.importKey(
-    'raw', pwdBytes, 'PBKDF2', false, ['deriveKey']
+    'raw', pwdBytes, 'PBKDF2', false, ['deriveBits']
   );
-  _cachedCryptoKey = await crypto.subtle.deriveKey(
-    { name: 'PBKDF2', salt: saltBytes, iterations: AES_ITER, hash: 'SHA-256' },
-    baseKey,
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt']
+  const keyBits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: saltBytes, iterations: AES_ITER, hash: 'SHA-1' },
+    baseKey, 256
   );
-  _cachedPassword = password;
+  const encKey = await crypto.subtle.importKey(
+    'raw', keyBits, { name: 'AES-CBC' }, false, ['encrypt', 'decrypt']
+  );
+  const hmacKey = await crypto.subtle.importKey(
+    'raw', keyBits, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign', 'verify']
+  );
+  _cachedCryptoKey = { encKey, hmacKey };
+  _cachedPassword  = password;
   return _cachedCryptoKey;
 }
 
@@ -676,21 +674,16 @@ async function encodeField(json, key) {
     return 'raw:' + base64Encode(bytes);
   }
   try {
-    const cryptoKey = await getCryptoKey(key);
-    const iv        = crypto.getRandomValues(new Uint8Array(12));
+    const { encKey, hmacKey } = await getCryptoKey(key);
+    const iv        = crypto.getRandomValues(new Uint8Array(16));
     const plaintext = new TextEncoder().encode(json);
-    const cipher    = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
-      cryptoKey,
-      plaintext
-    );
-    // AES-GCM возвращает ciphertext + tag[16] вместе
-    const result = new Uint8Array(12 + cipher.byteLength);
-    result.set(iv, 0);
-    result.set(new Uint8Array(cipher), 12);
+    const cipher    = await crypto.subtle.encrypt({ name: 'AES-CBC', iv }, encKey, plaintext);
+    const ct        = new Uint8Array(cipher);
+    const hmacSig   = await crypto.subtle.sign('HMAC', hmacKey, concatBytes(iv, ct));
+    const hmac      = new Uint8Array(hmacSig);
+    const result    = concatBytes(iv, ct, hmac);
     return 'aes:' + base64Encode(result);
   } catch(e) {
-    // Fallback: raw если crypto.subtle недоступен
     const bytes = new TextEncoder().encode(json);
     return 'raw:' + base64Encode(bytes);
   }
@@ -703,15 +696,14 @@ async function decodeField(encoded, key) {
   if (prefix === 'aes:') {
     if (!key) return '[зашифровано — ключ не указан]';
     try {
-      const cryptoKey = await getCryptoKey(key);
-      const raw = base64Decode(body);
-      const iv  = raw.slice(0, 12);
-      const ct  = raw.slice(12);
-      const plain = await crypto.subtle.decrypt(
-        { name: 'AES-GCM', iv },
-        cryptoKey,
-        ct
-      );
+      const { encKey, hmacKey } = await getCryptoKey(key);
+      const raw  = base64Decode(body);
+      const iv   = raw.slice(0, 16);
+      const hmac = raw.slice(raw.length - 32);
+      const ct   = raw.slice(16, raw.length - 32);
+      const valid = await crypto.subtle.verify('HMAC', hmacKey, hmac, concatBytes(iv, ct));
+      if (!valid) return '';
+      const plain = await crypto.subtle.decrypt({ name: 'AES-CBC', iv }, encKey, ct);
       return new TextDecoder().decode(plain);
     } catch(e) { return ''; }
   }
@@ -719,6 +711,14 @@ async function decodeField(encoded, key) {
     return new TextDecoder().decode(base64Decode(body));
   }
   return encoded;
+}
+
+  function concatBytes(...arrays) {
+  const total = arrays.reduce((n, a) => n + a.length, 0);
+  const out   = new Uint8Array(total);
+  let offset  = 0;
+  for (const a of arrays) { out.set(a, offset); offset += a.length; }
+  return out;
 }
 
 // ════════════════════════════════════════════════════════
