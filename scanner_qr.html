@@ -729,8 +729,11 @@ async function decodeField(encoded, key) {
 (function() {
   const params = new URLSearchParams(window.location.search);
   const keyFromUrl = params.get('key');
+  console.log('[QR-DEBUG] URL key param:', keyFromUrl ? 'FOUND (len=' + keyFromUrl.length + ')' : 'NOT FOUND');
+  console.log('[QR-DEBUG] Full URL:', window.location.href.slice(0, 100));
   if (keyFromUrl) {
     sessionStorage.setItem('encKey_from_qr', keyFromUrl);
+    console.log('[QR-DEBUG] Saved to sessionStorage OK');
     history.replaceState(null, '', window.location.pathname);
   }
 })();
@@ -1550,27 +1553,32 @@ document.getElementById('login-key').addEventListener('keydown', e => { if (e.ke
   const savedGuard = sessionStorage.getItem('guardName') || '';
   const keyFromQr  = sessionStorage.getItem('encKey_from_qr') || '';
 
-  // Восстанавливаем имя коменданта
+  console.log('[FORM-DEBUG] savedGuard:', savedGuard ? 'SET' : 'EMPTY');
+  console.log('[FORM-DEBUG] keyFromQr:', keyFromQr ? 'SET (len=' + keyFromQr.length + ')' : 'EMPTY');
+  console.log('[FORM-DEBUG] All sessionStorage keys:', Object.keys(sessionStorage).join(', ') || '(empty)');
+
   if (savedGuard) {
     document.getElementById('login-guard').value = savedGuard;
   }
 
   if (keyFromQr) {
-    // Ключ пришёл из QR — скрываем поле ключа
     document.getElementById('key-field-wrap').style.display = 'none';
     document.getElementById('login-key').value = keyFromQr;
+    console.log('[FORM-DEBUG] Key field hidden, value set');
 
     if (savedGuard) {
-      // Имя известно — входим автоматически
+      console.log('[FORM-DEBUG] Auto-login triggered');
       doLogin();
     } else {
-      // Показываем подсказку и фокусируем поле ФИО
       const hint = document.createElement('div');
       hint.style.cssText = 'text-align:center;font-size:13px;color:var(--accent2);margin-top:8px;';
       hint.textContent = '🔑 Ключ получен из QR-кода';
       document.getElementById('key-field-wrap').insertAdjacentElement('afterend', hint);
       document.getElementById('login-guard').focus();
+      console.log('[FORM-DEBUG] Showing hint, waiting for guard name');
     }
+  } else {
+    console.log('[FORM-DEBUG] No QR key — showing full form');
   }
 })();
 </script>
