@@ -766,6 +766,14 @@ async function doLogin() {
   const keyInput   = document.getElementById('login-key').value.trim();
   encKey = getKeyFromUrl() || keyInput;
 
+  // Если ключ взят из поля (не из URL) — обновляем URL, чтобы при следующем
+  // автовходе использовался актуальный ключ, а не устаревший из старой ссылки
+  if (keyInput && !getKeyFromUrl()) {
+    const params = new URLSearchParams(window.location.search);
+    params.set('key', keyInput);
+    history.replaceState(null, '', window.location.pathname + '?' + params.toString() + window.location.hash);
+  }
+
 
   if (!guardInput) {
     showLoginError('Введите ваше ФИО');
@@ -833,6 +841,24 @@ async function doLogin() {
     btn.disabled = false;
     btn.textContent = 'Войти и загрузить данные';
     clearLoadStatus();
+
+    if (e.message && e.message.includes('ключ')) {
+      // Неверный ключ — очищаем локальный кеш (он шифровался другим ключом)
+      try { await dbClear('guests'); await dbDelete('meta', 'cacheInfo'); } catch(_) {}
+
+      // Убираем ключ из URL — пользователь должен ввести правильный вручную
+      const cleanUrl = window.location.pathname + window.location.hash;
+      history.replaceState(null, '', cleanUrl);
+
+      // Убираем подсказку «Ключ из QR-кода» и показываем поле ввода ключа
+      const wrap = document.getElementById('key-field-wrap');
+      const sibling = wrap && wrap.nextElementSibling;
+      if (sibling && sibling.textContent.includes('QR')) sibling.remove();
+      wrap.style.display = '';
+      document.getElementById('login-key').value = '';
+      document.getElementById('login-key').focus();
+    }
+
     showLoginError('Ошибка загрузки: ' + e.message);
   }
 }
