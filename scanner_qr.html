@@ -1711,7 +1711,7 @@ function setStatus(type, text) {
   el.textContent = text;
 }
 
-const LOG_ICONS  = { ok:'✅', dup:'⚠️', err:'❌', uncheck:`<svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>` };
+const LOG_ICONS  = { ok:'✅', dup:'⚠️', err:'❌', uncheck:"<svg viewBox='0 0 24 24' width='10' height='10' fill='none' stroke='#fff' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'><polyline points='9 14 4 9 9 4'></polyline><path d='M20 20v-7a4 4 0 0 0-4-4H4'></path></svg>" };
 const LOG_COLORS = { ok:'var(--green)', dup:'var(--yellow)', err:'var(--red)', uncheck:'#94a3b8' };
 const LOG_LABELS = { ok:'Зарегистрирован', dup:'Уже отмечен', err:'Ошибка', uncheck:'Отмена регистрации' };
 
@@ -1729,12 +1729,16 @@ function addLog(type, guest, time) {
     : '';
   item.innerHTML = `
     <div class="log-row1">
-      <div class="log-icon${type === 'uncheck' ? ' uncheck' : ''}">${LOG_ICONS[type] || '•'}</div>
+      <div class="log-icon${type === 'uncheck' ? ' uncheck' : ''}" data-icon-type="${type}"></div>
       <div class="log-name">${esc(guest.name || '—')}</div>
       <div class="log-time">${time}</div>
     </div>
     ${guest.org ? `<div class="log-sub">${esc(guest.org)}</div>` : ''}
     <div class="log-label" style="color:${LOG_COLORS[type]||'var(--muted)'};">${LOG_LABELS[type]||''}${syncBadge}</div>`;
+
+  // Устанавливаем иконку отдельно — для SVG важно вставлять через innerHTML элемента
+  const iconEl = item.querySelector('[data-icon-type]');
+  if (iconEl) iconEl.innerHTML = LOG_ICONS[type] || '•';
   list.insertBefore(item, list.firstChild);
   while (list.children.length > 50) list.removeChild(list.lastChild);
   return logId;
