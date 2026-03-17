@@ -761,22 +761,15 @@ async function decodeField(encoded, key) {
 
 
 // Ключ читается прямо из URL при каждом вызове
-function getKeyFromUrl() {
-  return new URLSearchParams(window.location.search).get('key') || '';
-}
-
 async function doLogin() {
   const guardInput = document.getElementById('login-guard').value.trim();
-  // Ключ: из URL (QR-код) → из поля ввода
+  // Ключ берётся только из поля ввода — никогда из URL
   const keyInput   = document.getElementById('login-key').value.trim();
-  encKey = getKeyFromUrl() || keyInput;
+  encKey = keyInput;
 
-  // Если ключ взят из поля (не из URL) — обновляем URL, чтобы при следующем
-  // автовходе использовался актуальный ключ, а не устаревший из старой ссылки
-  if (keyInput && !getKeyFromUrl()) {
-    const params = new URLSearchParams(window.location.search);
-    params.set('key', keyInput);
-    history.replaceState(null, '', window.location.pathname + '?' + params.toString() + window.location.hash);
+  // Сохраняем ключ в sessionStorage — живёт пока открыта вкладка
+  if (keyInput) {
+    try { sessionStorage.setItem('encKey', keyInput); } catch(e) {}
   }
 
 
@@ -1054,23 +1047,7 @@ function reloginAfterKeyChange() {
   _cachedCryptoKey = null;
   _cachedPassword  = null;
   encKey = '';
-
-  // Убираем ключ из URL — чтобы doLogin() не подхватил старый ключ из адресной строки
-  const cleanUrl = window.location.pathname + window.location.hash;
-  history.replaceState(null, '', cleanUrl);
-
-  // Убираем подсказку «Ключ получен из QR-кода» если она была добавлена
-  const hint = document.querySelector('#login-body-wrap .qr-key-hint') ||
-               (() => {
-                 // ищем по тексту — подсказка вставлялась как div после key-field-wrap
-                 const wrap = document.getElementById('key-field-wrap');
-                 if (wrap && wrap.nextElementSibling &&
-                     wrap.nextElementSibling.textContent.includes('QR')) {
-                   return wrap.nextElementSibling;
-                 }
-                 return null;
-               })();
-  if (hint) hint.remove();
+  try { sessionStorage.removeItem('encKey'); } catch(e) {}
 
   // Показываем поле ключа и очищаем его
   document.getElementById('key-field-wrap').style.display = '';
@@ -1808,25 +1785,24 @@ document.getElementById('login-key').addEventListener('keydown', e => { if (e.ke
 
 // Инициализация формы входа — выполняется после загрузки всего DOM и скриптов
 (function initLoginForm() {
-  const urlKey     = getKeyFromUrl();
   const savedGuard = (function(){ try { return sessionStorage.getItem('guardName') || ''; } catch(e){ return ''; } })();
+  const savedKey   = (function(){ try { return sessionStorage.getItem('encKey')    || ''; } catch(e){ return ''; } })();
 
   if (savedGuard) {
     document.getElementById('login-guard').value = savedGuard;
   }
+  if (savedKey) {
+    document.getElementById('login-key').value = savedKey;
+  }
 
-  if (urlKey) {
-    // Ключ в URL — скрываем поле ввода ключа
-    document.getElementById('key-field-wrap').style.display = 'none';
-    if (savedGuard) {
-      doLogin();  // имя известно — автовход
-    } else {
-      const hint = document.createElement('div');
-      hint.style.cssText = 'text-align:center;font-size:13px;color:var(--accent2);margin-top:8px;';
-      hint.textContent = '🔑 Ключ получен из QR-кода';
-      document.getElementById('key-field-wrap').insertAdjacentElement('afterend', hint);
-      document.getElementById('login-guard').focus();
-    }
+  // Если имя и ключ известны — автовход
+  if (savedGuard && savedKey) {
+    doLogin();
+  } else if (savedGuard) {
+    // Имя есть, ключа нет — фокус на поле ключа
+    document.getElementById('login-key').focus();
+  } else {
+    document.getElementById('login-guard').focus();
   }
 })();
 </script>
