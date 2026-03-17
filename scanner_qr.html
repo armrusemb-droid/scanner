@@ -505,6 +505,10 @@ let pendingUncheckId = null;
 let clientIP = '';
 let clientUA = '';
 
+let lastSyncTime   = '0';   // серверный timestamp последней синхронизации отметок
+let isSyncing      = false; // флаг полной перезагрузки базы
+let checkSyncTimer = null;  // таймер синхронизации отметок
+
 // ════════════════════════════════════════════════════════
 //  IndexedDB — локальное хранилище базы и офлайн-очереди
 //  База хранится 7 дней, при несовпадении версии — удаляется
@@ -1108,6 +1112,18 @@ async function startApp() {
   startScanner();
   processOfflineQueue();
 
+  // Инициализируем точку отсчёта синхронизации отметок —
+  // берём maxTs текущего момента чтобы не тянуть историю
+  try {
+    const r = await fetch(API_URL + '?action=getChecks&since=' + (Date.now() - 500).toString());
+    const d = await r.json();
+    if (d.maxTs) lastSyncTime = d.maxTs;
+  } catch(e) {}
+
+  // Запускаем синхронизацию отметок каждые 10 секунд
+  if (checkSyncTimer) clearInterval(checkSyncTimer);
+  checkSyncTimer = setInterval(syncChecks, 10000);
+
   window.addEventListener('online',  onNetworkOnline);
   window.addEventListener('offline', onNetworkOffline);
 }
@@ -1134,19 +1150,79 @@ async function checkVersion() {
         return;
       }
 
+      isSyncing = true;          // блокируем syncChecks на время перезагрузки
       await loadGuests();
       lastVersion = ver;
+      // После полной перезагрузки сдвигаем точку отсчёта на текущий момент
+      try {
+        const r = await fetch(API_URL + '?action=getChecks&since=' + (Date.now() - 500).toString());
+        const d = await r.json();
+        if (d.maxTs) lastSyncTime = d.maxTs;
+      } catch(e) {}
+      isSyncing = false;         // снимаем блокировку
       updateSyncBadge('synced', `✅ База обновлена: ${guestCache.size} гостей`);
     }
   } catch(e) {
+    isSyncing = false;
     /* ошибки сети — молча */
   }
+}
+
+// ════════════════════════════════════════════════════════
+//  СИНХРОНИЗАЦИЯ ОТМЕТОК (каждые 10 секунд)
+// ════════════════════════════════════════════════════════
+
+async function syncChecks() {
+  if (!isOnline || isSyncing) return;
+  try {
+    const r = await fetch(API_URL + '?action=getChecks&since=' + lastSyncTime);
+    if (!r.ok) return;
+    const data = await r.json();
+    if (!data.success) return;
+
+    // Сдвигаем точку отсчёта в любом случае
+    if (data.maxTs) lastSyncTime = data.maxTs;
+
+    if (!data.rows || data.rows.length === 0) return;
+
+    let updated = 0;
+    for (const row of data.rows) {
+      try {
+        const json = await decodeField(row.data_enc, encKey);
+        const entry = JSON.parse(json);
+
+        // Нас интересуют только Регистрация и Отмена регистрации
+        if (entry.action !== 'Регистрация' &&
+            entry.action !== 'Отмена регистрации') continue;
+
+        // check_enc должен присутствовать в записи
+        if (entry.check_enc === undefined) continue;
+
+        const guest = guestCache.get(entry.id);
+        if (!guest) continue;
+
+        // Обновляем только если значение изменилось
+        if (guest.check_enc !== entry.check_enc) {
+          guest.check_enc = entry.check_enc;
+          guestCache.set(entry.id, guest);
+          updated++;
+        }
+      } catch(e) { /* повреждённую запись пропускаем */ }
+    }
+
+    if (updated > 0) {
+      updateSyncBadge('synced', `✅ Синхронизировано отметок: +${updated}`);
+      setTimeout(() =>
+        updateSyncBadge('synced', `✅ База загружена: ${guestCache.size} гостей`), 3000);
+    }
+  } catch(e) { /* ошибки сети — молча */ }
 }
 
 function onNetworkOnline() {
   isOnline = true;
   updateSyncBadge('synced', '🌐 Соединение восстановлено');
   checkVersion();
+  syncChecks();        // сразу догоняем пропущенные отметки
   processOfflineQueue();
 }
 
@@ -1265,6 +1341,7 @@ async function confirmGuest() {
     date: date, time: time, id: guest.id,
     name: guest.name, org: guest.org,
     guard: guardName, action: 'Регистрация',
+    check_enc: checkEnc,
     ip: clientIP, device: clientUA
   };
 
@@ -1381,7 +1458,9 @@ async function uncheckGuest() {
     date: now.toLocaleDateString('ru-RU', { day:'2-digit', month:'2-digit', year:'numeric' }),
     time: now.toLocaleTimeString('ru-RU', { hour:'2-digit', minute:'2-digit', second:'2-digit' }),
     id, name: guest ? guest.name : id, org: guest ? guest.org : '',
-    guard: guardName, action: 'Отмена регистрации', ip: clientIP, device: clientUA
+    guard: guardName, action: 'Отмена регистрации',
+    check_enc: '',
+    ip: clientIP, device: clientUA
   };
 
   if (isOnline) {
